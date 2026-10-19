@@ -1,0 +1,1659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skill Builder Visualizer</title>
+<style>
+:root {
+  --bg: #f4f5f8; --dot: #d9dde6; --panel: #ffffff; --ink: #1c2330; --muted: #667085; --line: #d5dae3;
+  --accent: #3b5bdb; --accent-soft: #e7ecff; --ok: #2b8a3e; --skip: #98a1b3;
+  --par: #b45f06; --par-soft: #fff4e5; --dyn: #7048e8; --dyn-soft: #f1ebff; --err: #c92a2a;
+  --out: #0b7285; --out-soft: #e3fafc;
+  --shadow: 0 1px 2px rgba(16,24,40,.08), 0 4px 12px rgba(16,24,40,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151c; --dot: #262c3a; --panel: #1b202b; --ink: #e8ebf2; --muted: #9aa3b5; --line: #323a4b;
+    --accent: #8ba2ff; --accent-soft: #232c4d; --ok: #69db7c; --skip: #5c6579;
+    --par: #ffc078; --par-soft: #2e2418; --dyn: #b197fc; --dyn-soft: #272040; --err: #ff8787;
+    --out: #66d9e8; --out-soft: #12303a; --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { margin: 0; font-size: 17px; }
+header p { margin: 0; color: var(--muted); flex: 1 1 260px; }
+#agentbar { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.pill { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.pill[data-s="needs-review"] { background: var(--par-soft); color: var(--par); border-color: var(--par); }
+.pill[data-s="enhanced"] { background: var(--dyn-soft); color: var(--dyn); border-color: var(--dyn); }
+.pill[data-s="approved"] { background: var(--out-soft); color: var(--out); border-color: var(--out); }
+.act { font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+.act.ghost { background: none; color: var(--accent); }
+.act:disabled { opacity: .45; cursor: not-allowed; }
+.act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+#banner { display: none; padding: 8px 16px; background: var(--err); color: #fff; font-size: 13px; }
+#stage { flex: 1; position: relative; min-height: 0; }
+#board {
+  position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  background-image: radial-gradient(var(--dot) 1px, transparent 1px); background-size: 20px 20px;
+}
+#board.panning { cursor: grabbing; }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+#chart { position: absolute; left: 0; top: 0; }
+#chart svg { position: absolute; inset: 0; pointer-events: none; }
+#zoomctl { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; box-shadow: var(--shadow); z-index: 5; }
+#zoomctl button { font: inherit; min-width: 32px; height: 30px; padding: 0 8px; border: 0; background: none; color: var(--ink); border-radius: 7px; cursor: pointer; }
+#edittools { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: center; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; box-shadow: var(--shadow); z-index: 5; }
+#edittools[hidden] { display: none; }
+@media (max-width: 600px) { #edittools { max-width: calc(100% - 28px); overflow-x: auto; } #edittools button { white-space: nowrap; } }
+#edittools button { font: inherit; height: 30px; padding: 0 10px; border: 0; background: none; color: var(--ink); border-radius: 7px; cursor: pointer; }
+#edittools button:hover:not(:disabled) { background: var(--accent-soft); }
+#edittools button:disabled { opacity: .35; cursor: default; }
+#edittools button:focus-visible { outline: 2px solid var(--accent); }
+#edittools .hint { padding: 0 8px; min-width: 0; }
+#edittools #addStep { color: var(--accent); font-weight: 700; }
+@media (hover: none) { .editable .port { opacity: .7; } }
+.port { display: none; position: absolute; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--panel); border: 2px solid var(--accent); opacity: 0; transition: opacity .15s; }
+.editable .port { display: block; }
+.node:hover .port, .node.selected .port { opacity: 1; }
+.port.in { left: -7px; border-color: var(--skip); pointer-events: none; }
+.port.out { right: -7px; cursor: crosshair; }
+.edge-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; }
+.edel { display: none; pointer-events: all; cursor: pointer; }
+.edge:hover .edel { display: block; }
+.edel circle { fill: var(--panel); stroke: var(--err); stroke-width: 1.5; }
+.edel text { fill: var(--err); font-size: 14px; font-weight: 700; }
+.editable .node { cursor: grab; }
+#sheet label.f { display: block; margin: 10px 0 0; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+#sheet input[type=text], #sheet textarea, #sheet select { display: block; width: 100%; margin-top: 3px; font: inherit; font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+#sheet textarea { resize: vertical; }
+#sheet input:focus-visible, #sheet textarea:focus-visible, #sheet select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chipx { font: inherit; font-size: 13px; line-height: 1; padding: 0 2px; margin-left: 2px; border: 0; background: none; color: var(--err); cursor: pointer; border-radius: 4px; }
+.chipx:hover { background: var(--bg); }
+.act.danger { border-color: var(--err); background: none; color: var(--err); }
+.node.multi { box-shadow: 0 0 0 3px var(--par-soft), 0 0 0 5px var(--par); }
+#topbars { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: calc(100% - 24px); }
+#revbar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--dyn); border-radius: 12px; box-shadow: var(--shadow); flex-wrap: wrap; }
+#revbar[hidden] { display: none; }
+.node.chg-added { border-color: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent), var(--shadow); }
+.node.chg-modified { border-color: var(--par); box-shadow: 0 0 0 3px var(--par-soft), var(--shadow); }
+.rbadge { position: absolute; top: -9px; left: 12px; font-size: 10px; font-weight: 700; font-style: normal; padding: 0 7px; border-radius: 999px; color: #fff; }
+.rbadge.added { background: var(--ok); }
+.rbadge.modified { background: var(--par); }
+.chg { margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.chghead { display: flex; align-items: center; gap: 8px; }
+.rtag { font-size: 10px; font-weight: 700; padding: 0 7px; border-radius: 999px; color: #fff; }
+.rtag.added { background: var(--ok); } .rtag.modified { background: var(--par); } .rtag.removed { background: var(--err); }
+.chg .fld { margin-top: 6px; font-size: 13px; overflow-wrap: anywhere; }
+.chg .fld small { display: block; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-size: 10px; }
+.chg .old { color: var(--muted); text-decoration: line-through; }
+.chg .btns { margin-top: 8px; }
+.chg .btns .act { margin-right: 6px; }
+#selbar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--par); border-radius: 12px; box-shadow: var(--shadow); flex-wrap: wrap; }
+#selbar[hidden] { display: none; }
+.hodetails summary { cursor: pointer; margin-top: 10px; color: var(--accent); font-size: 13px; }
+#sheet textarea[readonly] { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ftree { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
+.ftree li { padding: 2px 0; }
+.ftree button { font: inherit; border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; text-align: left; }
+.ftree button:hover { text-decoration: underline; }
+.ftree .dir { font-weight: 700; color: var(--muted); }
+.ftree .sz { color: var(--muted); font-size: 11px; margin-left: 6px; }
+.fhead { margin-top: 12px; font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
+#filePreview pre { margin: 6px 0 0; padding: 10px; max-height: 360px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.warn.soft { border-color: var(--par); background: var(--par-soft); }
+.lane-label.bad { color: var(--err); }
+.newin { margin-top: 8px; padding: 10px; border: 1px dashed var(--dyn); border-radius: 10px; background: var(--dyn-soft); }
+.newin .act { margin: 8px 6px 0 0; }
+.clause { position: relative; display: grid; gap: 6px; margin-top: 6px; padding: 8px 28px 8px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.clause select { margin-top: 0 !important; }
+.clause .chipx { position: absolute; top: 6px; right: 6px; font-size: 16px; }
+.ckset { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.ck { font-size: 13px; cursor: pointer; }
+.inp { margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.inprow, .optrow { display: flex; align-items: center; gap: 8px; }
+.optrow { margin-top: 6px; }
+.inprow input[type=text], .optrow input[type=text] { flex: 1; margin-top: 0 !important; }
+.tag { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.tag.dyn { background: var(--dyn-soft); color: var(--dyn); border-color: var(--dyn); }
+.warn { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--err); border-radius: 8px; font-size: 13px; }
+.warn .act { margin: 6px 6px 0 0; }
+.ferr { margin-top: 3px; font-size: 12px; color: var(--err); }
+#sheet input[aria-invalid=true] { border-color: var(--err); }
+@media (max-width: 600px) { #zoomctl { bottom: 58px; } }
+#zoomctl button:hover { background: var(--accent-soft); }
+#zoomctl button:focus-visible { outline: 2px solid var(--accent); }
+#zoomctl .pct { min-width: 52px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.node {
+  position: absolute; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 12px;
+  background: var(--panel); cursor: pointer; box-shadow: var(--shadow); transition: opacity .2s, border-color .2s;
+}
+.node:hover { border-color: var(--accent); }
+.node.cond { border-style: dashed; border-color: var(--dyn); }
+.node.skipped { border-color: var(--skip); background: transparent; box-shadow: none; }
+.node.skipped > b, .node.skipped > span, .node.skipped > .badge { opacity: .5; filter: grayscale(1); }
+.node.selected { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); border-color: var(--accent); }
+.node b { display: block; font-size: 13px; padding-right: 54px; overflow-wrap: anywhere; }
+.node > span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.badge { position: absolute; top: 9px; right: 10px; font-size: 10px; font-weight: 700; padding: 0 6px; border-radius: 999px; font-style: normal; }
+.badge.join { background: var(--par-soft); color: var(--par); }
+.badge.dyn { background: var(--dyn-soft); color: var(--dyn); }
+.badge.skip { background: var(--bg); color: var(--muted); }
+.ctl { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.ctl label { display: block; overflow-wrap: anywhere; font-size: 11px; font-weight: 700; color: var(--dyn); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button { font: inherit; font-size: 12px; padding: 1px 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--dyn); border-color: var(--dyn); color: #fff; }
+.seg button:focus-visible, .node:focus-visible, .close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; margin: 0 4px 4px 0; }
+.lane { position: absolute; border: 1.5px dashed var(--par); border-radius: 16px; background: var(--par-soft); opacity: .55; }
+.lane-label { position: absolute; font-size: 11px; font-weight: 700; color: var(--par); }
+.lane.main { border-color: var(--accent); background: var(--accent-soft); opacity: .4; }
+.lane-label.main { color: var(--accent); }
+.outcard {
+  position: absolute; padding: 10px 12px; border: 1.5px solid var(--out); border-radius: 12px; background: var(--out-soft);
+  box-shadow: var(--shadow);
+}
+.outcard h3 { margin: 0; font-size: 13px; }
+.outcard .kind { font-size: 11px; color: var(--out); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.outcard p { margin: 2px 0 4px; color: var(--muted); font-size: 12px; }
+.outcard ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.outcard li { padding: 1px 0 1px 20px; position: relative; font-size: 13px; }
+.outcard li::before { content: "☑"; position: absolute; left: 0; color: var(--ok); }
+.outcard li.off { color: var(--muted); text-decoration: line-through; opacity: .6; }
+.outcard li.off::before { content: "–"; color: var(--skip); }
+.bar { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.strip { position: absolute; left: 16px; top: 8px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; z-index: 1; }
+.strip .ctl { margin: 0; padding: 4px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+#sheet {
+  position: fixed; top: 0; right: 0; height: 100%; width: min(440px, 100%); background: var(--panel);
+  border-left: 1px solid var(--line); box-shadow: var(--shadow); padding: 0; overflow: hidden; display: flex; flex-direction: column;
+  transform: translateX(105%); transition: transform .2s ease; z-index: 10;
+}
+#sheet.open { transform: none; }
+#sheetBody { flex: 1; min-height: 0; overflow: auto; padding: 0 16px 16px; }
+#sheet h2 { position: sticky; top: 0; z-index: 2; margin: 0 -16px 4px; padding: 16px 48px 10px 16px; font-size: 18px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.hint { color: var(--muted); font-size: 12px; }
+.close { position: absolute; z-index: 3; top: 10px; right: 12px; border: 0; background: none; color: var(--muted); font-size: 22px; cursor: pointer; }
+.status { padding: 6px 10px; border-radius: 8px; margin: 8px 0 12px; font-size: 13px; background: var(--accent-soft); }
+.status.skipped { background: var(--bg); color: var(--muted); }
+.detail code { background: var(--bg); padding: 0 4px; border-radius: 4px; }
+.detail ul { padding-left: 20px; }
+.row { margin: 8px 0; }
+.row small { display: block; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-size: 11px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="banner" role="alert"></div>
+<header>
+  <h1 id="title">Skill</h1>
+  <p id="desc"></p>
+  <div class="legend">
+    <span>Solid: always runs</span><span style="color:var(--dyn)">Dashed: conditional (use its toggle)</span>
+    <span style="color:var(--accent)">Blue lane: main agent</span><span style="color:var(--par)">Orange lane: parallel</span><span>Faded: skipped</span><span style="color:var(--out)">Teal: outputs</span><span>Drag to pan, Ctrl+scroll or pinch to zoom, Shift-click cards to select several</span>
+  </div>
+  <div id="agentbar">
+    <span class="hint" id="sigmsg" aria-live="polite"></span>
+    <span class="pill" id="status" data-s="draft">draft</span>
+    <button type="button" class="act ghost" id="changesBtn" hidden>Request changes</button>
+    <button type="button" class="act" id="readyBtn">Ready for agent</button>
+  </div>
+</header>
+<div id="stage">
+  <div id="board"><div id="world"><div class="strip" id="strip"></div><div id="chart"></div></div></div>
+  <div id="topbars">
+  <div id="revbar" role="group" aria-label="Agent changes" hidden>
+    <span id="revmsg"></span>
+    <button type="button" class="act" id="revOpen">Review changes</button>
+    <button type="button" class="act ghost" id="revAccept">Accept all</button>
+    <button type="button" class="act ghost" id="revReject">Reject all</button>
+  </div>
+  <div id="selbar" role="group" aria-label="Selected steps" hidden>
+    <span id="selmsg"></span>
+    <button type="button" class="act" id="parBtn">Make parallel</button>
+    <button type="button" class="act ghost" id="joinBtn">Add join</button>
+    <button type="button" class="act ghost" id="selClear">Clear</button>
+  </div>
+  </div>
+  <div id="edittools" role="group" aria-label="Edit tools" hidden>
+    <button type="button" id="addStep" title="Add a step (connects after the selected step)">+ Step</button>
+    <button type="button" id="inputsBtn" title="Manage inputs and their toggles">Inputs</button>
+    <button type="button" id="chatBtn" title="Hand the plan to an assistant in a chat window, and paste its reply back">Chat agent</button>
+    <button type="button" id="filesBtn" title="Choose where the finished skill is written and watch the files appear">Files</button>
+    <button type="button" id="undoBtn" title="Undo (Ctrl+Z)">Undo</button>
+    <button type="button" id="redoBtn" title="Redo (Ctrl+Shift+Z)">Redo</button>
+    <button type="button" id="relayoutBtn" title="Forget dragged positions and auto-arrange">Re-layout</button>
+    <span class="hint" id="flash" aria-live="polite"></span>
+  </div>
+  <div id="zoomctl" role="group" aria-label="View controls">
+    <button type="button" id="zout" aria-label="Zoom out" title="Zoom out (-)">−</button>
+    <button type="button" id="zpct" class="pct" aria-label="Reset zoom to 100%" title="Reset to 100% (1)">100%</button>
+    <button type="button" id="zin" aria-label="Zoom in" title="Zoom in (+)">+</button>
+    <button type="button" id="zfit" aria-label="Fit to screen" title="Fit to screen (0)">Fit</button>
+  </div>
+</div>
+<aside id="sheet" aria-label="Step details" aria-hidden="true">
+  <button class="close" id="close" aria-label="Close details">×</button>
+  <div id="sheetBody"></div>
+</aside>
+
+<script>
+/*CORE-START*/
+// Pure logic for the skill-builder visualizer. No DOM access, so it runs in the
+// browser (window.SkillCore) and in node (require) for tests.
+(function (root) {
+  function checkCond(cond, sel) {
+    if (!cond) return true;
+    if (cond.all) return cond.all.every((c) => checkCond(c, sel));
+    if (cond.any) return cond.any.some((c) => checkCond(c, sel));
+    const v = sel[cond.input];
+    if ('is' in cond) return v === cond.is;
+    if ('isNot' in cond) return v !== cond.isNot;
+    if ('in' in cond) return cond.in.includes(v);
+    return true;
+  }
+
+  function describeCond(cond) {
+    if (!cond) return '';
+    if (cond.all) return cond.all.map(describeCond).join(' and ');
+    if (cond.any) return cond.any.map(describeCond).join(' or ');
+    if ('is' in cond) return `${cond.input} is ${cond.is}`;
+    if ('isNot' in cond) return `${cond.input} is not ${cond.isNot}`;
+    if ('in' in cond) return `${cond.input} is one of ${cond.in.join(', ')}`;
+    return '';
+  }
+
+  function defaultSelections(spec) {
+    const sel = {};
+    for (const i of spec.inputs || []) {
+      if (i.kind === 'dynamic' && i.options && i.options.length) {
+        sel[i.id] = i.default !== undefined ? i.default : i.options[0].id;
+      }
+    }
+    return sel;
+  }
+
+  // Layer = longest dependency chain to a root. Throws on unknown deps or cycles.
+  function layers(spec) {
+    const steps = spec.steps || [];
+    const byId = new Map(steps.map((s) => [s.id, s]));
+    const depth = new Map();
+    const visiting = new Set();
+    function d(id) {
+      if (depth.has(id)) return depth.get(id);
+      if (visiting.has(id)) throw new Error(`Cycle in dependsOn at step "${id}"`);
+      const s = byId.get(id);
+      if (!s) throw new Error(`Unknown step "${id}" in dependsOn`);
+      visiting.add(id);
+      const deps = s.dependsOn || [];
+      const v = deps.length ? 1 + Math.max(...deps.map(d)) : 0;
+      visiting.delete(id);
+      depth.set(id, v);
+      return v;
+    }
+    steps.forEach((s) => d(s.id));
+    return depth;
+  }
+
+  // Returns Map(stepId -> {active, reason}). A step is skipped when its own
+  // runWhen fails, or when it has dependencies and every one of them is skipped.
+  // A join therefore still runs if any branch feeding it is active.
+  function evaluate(spec, sel) {
+    const depth = layers(spec);
+    const ordered = [...(spec.steps || [])].sort((a, b) => depth.get(a.id) - depth.get(b.id));
+    const res = new Map();
+    for (const s of ordered) {
+      if (!checkCond(s.runWhen, sel)) {
+        res.set(s.id, { active: false, reason: `Needs ${describeCond(s.runWhen)}` });
+        continue;
+      }
+      const deps = s.dependsOn || [];
+      if (deps.length && deps.every((id) => !res.get(id).active)) {
+        res.set(s.id, { active: false, reason: 'Everything upstream was skipped' });
+        continue;
+      }
+      res.set(s.id, { active: true, reason: s.runWhen ? `Runs because ${describeCond(s.runWhen)}` : 'Always runs' });
+    }
+    return res;
+  }
+
+  function visibleItems(output, sel) {
+    return (output.items || []).map((it) => {
+      const text = typeof it === 'string' ? it : it.text;
+      const when = typeof it === 'string' ? null : it.when;
+      return { text, conditional: !!when, active: checkCond(when, sel), why: describeCond(when) };
+    });
+  }
+
+  // Left-to-right layered layout. Returns node boxes plus parallel-group boxes.
+  function layout(spec, o) {
+    const W = (o && o.w) || 210, GX = (o && o.gx) || 70, GY = (o && o.gy) || 26, PAD = 24;
+    const hOf = (o && o.hOf) || (() => (o && o.h) || 92);
+    const depth = layers(spec);
+    const cols = new Map();
+    for (const s of spec.steps || []) {
+      const l = depth.get(s.id);
+      if (!cols.has(l)) cols.set(l, []);
+      cols.get(l).push(s);
+    }
+    const colHeight = (list) => list.reduce((a, s) => a + hOf(s), 0) + (list.length - 1) * GY;
+    const totalH = Math.max(1, ...[...cols.values()].map(colHeight));
+    const nodes = new Map();
+    for (const [l, list] of cols) {
+      let y = PAD + (totalH - colHeight(list)) / 2;
+      list.forEach((s) => { const h = hOf(s); nodes.set(s.id, { id: s.id, x: PAD + l * (W + GX), y, w: W, h }); y += h + GY; });
+    }
+    for (const s of spec.steps || []) { // manual position (dragged by the user) overrides auto-layout
+      if (Number.isFinite(s.x) && Number.isFinite(s.y)) Object.assign(nodes.get(s.id), { x: s.x, y: s.y, manual: true });
+    }
+    const groups = new Map();
+    for (const s of spec.steps || []) {
+      if (!s.parallelGroup) continue;
+      if (!groups.has(s.parallelGroup)) groups.set(s.parallelGroup, []);
+      groups.get(s.parallelGroup).push(nodes.get(s.id));
+    }
+    const boxes = [...groups].filter(([, n]) => n.length > 1).map(([name, n]) => {
+      const x = Math.min(...n.map((b) => b.x)) - 10, y = Math.min(...n.map((b) => b.y)) - 26;
+      return { name, x, y, w: W + 20, h: Math.max(...n.map((b) => b.y + b.h)) + 10 - y };
+    });
+    const inLane = new Set(); // ids drawn inside a parallel lane
+    for (const [, n] of groups) if (n.length > 1) n.forEach((b) => inLane.add(b.id));
+    const mains = [...nodes.values()].filter((b) => !inLane.has(b.id)).map((b) => ({ id: b.id, x: b.x - 10, y: b.y - 26, w: b.w + 20, h: b.h + 36 }));
+    const all = [...nodes.values()];
+    const width = Math.max(320, ...all.map((n) => n.x + n.w + PAD));
+    const height = Math.max(totalH + PAD * 2, ...all.map((n) => n.y + n.h + PAD));
+    return { nodes, groups: boxes, mains, width, height };
+  }
+
+  // Does the segment p-q pass through the inside of box r? Touching an edge does not count.
+  function segHits(p, q, r) {
+    const minx = Math.min(p[0], q[0]), maxx = Math.max(p[0], q[0]), miny = Math.min(p[1], q[1]), maxy = Math.max(p[1], q[1]);
+    return maxx > r.x && minx < r.x + r.w && maxy > r.y && miny < r.y + r.h;
+  }
+  // Orthogonal connector from the middle of a's right side to the middle of b's left side that goes around every
+  // obstacle box (other cards and lanes; leave out the boxes a and b sit in). Returns the corner points.
+  // Tries one vertical channel (3 segments) first, then a detour along a free row (5 segments).
+  function routeEdge(a, b, obstacles, o) {
+    const M = (o && o.margin) || 20, obs = obstacles || [];
+    const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2;
+    const clear = (pts) => pts.every((p, i) => i === 0 || !obs.some((r) => segHits(pts[i - 1], p, r)));
+    const uniq = (xs) => [...new Set(xs.map((x) => Math.round(x)))];
+    const edgesX = obs.flatMap((r) => [r.x - M, r.x + r.w + M]);
+    if (x2 - x1 >= 2 * M) {
+      const mid = (x1 + x2) / 2;
+      const chans = uniq([mid, x1 + M, x2 - M, ...edgesX]).filter((x) => x >= x1 + M && x <= x2 - M).sort((p, q) => Math.abs(p - mid) - Math.abs(q - mid));
+      for (const vx of chans) { const pts = [[x1, y1], [vx, y1], [vx, y2], [x2, y2]]; if (clear(pts)) return pts; }
+    }
+    const outs = uniq([x1 + M, ...edgesX]).filter((x) => x >= x1 + M).sort((p, q) => p - q).slice(0, 6);
+    const ins = uniq([x2 - M, ...edgesX]).filter((x) => x <= x2 - M).sort((p, q) => q - p).slice(0, 6);
+    const rows = uniq([y1, y2, ...obs.flatMap((r) => [r.y - M, r.y + r.h + M])]).sort((p, q) => (Math.abs(p - y1) + Math.abs(p - y2)) - (Math.abs(q - y1) + Math.abs(q - y2)));
+    for (const cy of rows) for (const v1 of outs) for (const v2 of ins) {
+      const pts = [[x1, y1], [v1, y1], [v1, cy], [v2, cy], [v2, y2], [x2, y2]];
+      if (clear(pts)) return pts;
+    }
+    const mx = Math.max(x1 + M, (x1 + x2) / 2); // nothing clear: fall back to the plain elbow
+    return [[x1, y1], [mx, y1], [mx, y2], [x2, y2]];
+  }
+
+  // ---- helpers used by the editor ----
+  function condInputIds(c, acc = []) {
+    if (!c) return acc;
+    if (c.all) c.all.forEach((x) => condInputIds(x, acc));
+    else if (c.any) c.any.forEach((x) => condInputIds(x, acc));
+    else if (c.input && !acc.includes(c.input)) acc.push(c.input);
+    return acc;
+  }
+  // Where an input is used: step conditions and conditional output items.
+  function inputUsage(spec, id) {
+    const steps = [], items = [];
+    for (const s of spec.steps || []) if (condInputIds(s.runWhen).includes(id)) steps.push(s.id);
+    for (const o of spec.outputs || []) (o.items || []).forEach((it, i) => {
+      if (it && typeof it === 'object' && condInputIds(it.when).includes(id)) items.push({ output: o.id, index: i });
+    });
+    return { steps, items };
+  }
+  // Remove every clause on an input. Returns the remaining condition, or null when nothing is left.
+  function stripInput(cond, id) {
+    if (!cond) return null;
+    const k = cond.all ? 'all' : cond.any ? 'any' : null;
+    if (k) {
+      const rest = cond[k].map((c) => stripInput(c, id)).filter(Boolean);
+      return rest.length === 0 ? null : rest.length === 1 ? rest[0] : { [k]: rest };
+    }
+    return cond.input === id ? null : cond;
+  }
+  // Does this condition mention a specific option of an input?
+  function usesOption(cond, inputId, optId) {
+    if (!cond) return false;
+    const k = cond.all ? 'all' : cond.any ? 'any' : null;
+    if (k) return cond[k].some((c) => usesOption(c, inputId, optId));
+    if (cond.input !== inputId) return false;
+    return cond.is === optId || cond.isNot === optId || (Array.isArray(cond.in) && cond.in.includes(optId));
+  }
+  const isLeaf = (c) => !!(c && c.input && ('is' in c || 'isNot' in c || 'in' in c));
+  // Editable form of a condition: {mode, clauses}, or null when it is nested too deeply to edit as a list.
+  function toClauses(cond) {
+    if (!cond) return { mode: 'all', clauses: [] };
+    if (isLeaf(cond)) return { mode: 'all', clauses: [cond] };
+    const k = cond.all ? 'all' : cond.any ? 'any' : null;
+    if (!k || !Array.isArray(cond[k]) || !cond[k].every(isLeaf)) return null;
+    return { mode: k, clauses: cond[k] };
+  }
+  function fromClauses(mode, clauses) {
+    if (!clauses.length) return null;
+    return clauses.length === 1 ? clauses[0] : { [mode]: clauses };
+  }
+  // Advisory problems with parallel groups: a typo'd name, unequal parents, a chain inside the group, no join.
+  function parallelIssues(spec) {
+    const steps = spec.steps || [], groups = new Map(), out = [];
+    for (const s of steps) if (s.parallelGroup) { if (!groups.has(s.parallelGroup)) groups.set(s.parallelGroup, []); groups.get(s.parallelGroup).push(s); }
+    for (const [g, m] of groups) {
+      const ids = new Set(m.map((s) => s.id)), name = (s) => s.title || s.id;
+      if (m.length === 1) { out.push({ group: g, kind: 'single', steps: [m[0].id], message: `Only "${name(m[0])}" uses the group "${g}". Steps need the same group name to share a lane.` }); continue; }
+      if (m.some((s) => (s.dependsOn || []).some((d) => ids.has(d)))) out.push({ group: g, kind: 'chained', steps: [...ids], message: `A step in "${g}" waits for another step in the same group, so they cannot run together.` });
+      const key = (s) => JSON.stringify([...(s.dependsOn || [])].sort());
+      if (new Set(m.map(key)).size > 1) out.push({ group: g, kind: 'parents', steps: [...ids], message: `Steps in "${g}" wait for different steps, so they will not start together.` });
+      if (!steps.some((t) => !ids.has(t.id) && [...ids].every((i) => (t.dependsOn || []).includes(i)))) out.push({ group: g, kind: 'nojoin', steps: [...ids], message: `Nothing waits for all of "${g}" yet. Add a join step that collects the results.` });
+    }
+    return out;
+  }
+
+  // Inputs and outputs of every step. Each step lists what it reads (input or artifact ids, [] if truly nothing)
+  // and the artifacts it produces. Each artifact has a path and format, one producer, and a reader or an output
+  // that delivers it. Approve is blocked while any of these remain.
+  function ioIssues(spec) {
+    const steps = spec.steps || [], out = [], name = (s) => s.title || s.id;
+    const inputIds = new Set((spec.inputs || []).map((i) => i.id));
+    const arts = new Map((spec.artifacts || []).map((a) => [a.id, a]));
+    const byId = new Map(steps.map((s) => [s.id, s])), producers = new Map();
+    for (const s of steps) for (const a of s.produces || []) { if (!producers.has(a)) producers.set(a, []); producers.get(a).push(s.id); }
+    const upstream = (id, seen = new Set()) => { for (const d of (byId.get(id) || {}).dependsOn || []) if (!seen.has(d)) { seen.add(d); upstream(d, seen); } return seen; };
+    const readers = new Set(steps.flatMap((s) => s.reads || []));
+    const delivered = new Set((spec.outputs || []).map((o) => o.artifact).filter(Boolean));
+    for (const s of steps) {
+      if (!Array.isArray(s.reads)) out.push({ kind: 'noreads', steps: [s.id], message: `"${name(s)}" does not say what it reads. List its inputs, or an empty list if it needs none.` });
+      if (!Array.isArray(s.produces) || !s.produces.length) out.push({ kind: 'noproduces', steps: [s.id], message: `"${name(s)}" does not say what it produces. Every step writes at least one artifact.` });
+      const up = upstream(s.id);
+      for (const r of s.reads || []) {
+        if (inputIds.has(r)) continue;
+        if (!arts.has(r) && !producers.has(r)) { out.push({ kind: 'unknownread', steps: [s.id], message: `"${name(s)}" reads "${r}", which is neither an input nor an artifact.` }); continue; }
+        if (!(producers.get(r) || []).some((p) => up.has(p))) out.push({ kind: 'notupstream', steps: [s.id], message: `"${name(s)}" reads "${r}", but no step it waits for produces it.` });
+      }
+      for (const p of s.produces || []) {
+        const a = arts.get(p);
+        if (!a) out.push({ kind: 'undefinedartifact', steps: [s.id], message: `"${name(s)}" produces "${p}", which is not listed in artifacts with a path and format.` });
+        else if (!a.path || !a.format) out.push({ kind: 'artifactfields', steps: [s.id], message: `Artifact "${p}" needs both a path and a format.` });
+      }
+    }
+    for (const [a, ps] of producers) {
+      if (ps.length > 1) out.push({ kind: 'collide', steps: ps, message: `"${a}" is written by more than one step (${ps.map((id) => name(byId.get(id))).join(', ')}). Give each its own artifact so they do not overwrite each other.` });
+      if (!readers.has(a) && !delivered.has(a)) out.push({ kind: 'unused', steps: ps, message: `Nothing reads "${a}" and no output delivers it. Have a later step read it, link it to an output with "artifact", or drop it.` });
+    }
+    for (const a of arts.keys()) if (!producers.has(a)) out.push({ kind: 'orphan', steps: [], message: `Artifact "${a}" is listed but no step produces it.` });
+    for (const o of spec.outputs || []) if (o.artifact && !arts.has(o.artifact)) out.push({ kind: 'badoutput', steps: [], message: `Output "${o.label || o.id}" delivers "${o.artifact}", which is not a listed artifact.` });
+    return out;
+  }
+
+  // ---- review: diff what an agent changed against the plan as it was handed over ----
+  const clone = (v) => JSON.parse(JSON.stringify(v));
+  const canon = (v) => (v && typeof v === 'object' ? (Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' : '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}') : JSON.stringify(v));
+  const LAYOUT_ONLY = new Set(['x', 'y']); // where the user dragged a card is not a design change
+  const COLLECTIONS = { step: 'steps', input: 'inputs', output: 'outputs', artifact: 'artifacts' };
+  const META = ['name', 'description', 'outputDir', 'workDir'];
+  function diffSpecs(base, cur) {
+    const out = [];
+    for (const f of META) if (canon(base[f]) !== canon(cur[f])) out.push({ id: `meta:modified:${f}`, kind: 'meta', op: 'modified', key: f, fields: [f] });
+    for (const kind of Object.keys(COLLECTIONS)) {
+      const A = new Map((base[COLLECTIONS[kind]] || []).map((x) => [x.id, x])), B = new Map((cur[COLLECTIONS[kind]] || []).map((x) => [x.id, x]));
+      for (const id of B.keys()) if (!A.has(id)) out.push({ id: `${kind}:added:${id}`, kind, op: 'added', key: id });
+      for (const id of A.keys()) if (!B.has(id)) out.push({ id: `${kind}:removed:${id}`, kind, op: 'removed', key: id });
+      for (const [id, b] of B) {
+        if (!A.has(id)) continue;
+        const a = A.get(id), keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+        const fields = [...keys].filter((k) => !LAYOUT_ONLY.has(k) && canon(a[k]) !== canon(b[k])).sort();
+        if (fields.length) out.push({ id: `${kind}:modified:${id}`, kind, op: 'modified', key: id, fields });
+      }
+    }
+    return out;
+  }
+  // Make `target`'s version of one change equal `source`'s. Accept = apply to the baseline from the current plan;
+  // reject = apply to the current plan from the baseline.
+  function applyChange(target, source, ch) {
+    if (ch.kind === 'meta') { if (source[ch.key] === undefined) delete target[ch.key]; else target[ch.key] = clone(source[ch.key]); return; }
+    const arr = COLLECTIONS[ch.kind], sArr = source[arr] || [], tArr = (target[arr] = target[arr] || []);
+    const src = sArr.find((x) => x.id === ch.key), at = tArr.findIndex((x) => x.id === ch.key);
+    if (!src) { if (at >= 0) tArr.splice(at, 1); return; }
+    if (at < 0) { // put it back next to the neighbour that follows it in the source
+      let pos = tArr.length;
+      for (let j = sArr.indexOf(src) + 1; j < sArr.length; j++) { const k = tArr.findIndex((x) => x.id === sArr[j].id); if (k >= 0) { pos = k; break; } }
+      tArr.splice(pos, 0, clone(src)); return;
+    }
+    if (ch.op === 'modified') { for (const f of ch.fields) { if (src[f] === undefined) delete tArr[at][f]; else tArr[at][f] = clone(src[f]); } return; }
+    tArr[at] = clone(src);
+  }
+  // Drop references to things that no longer exist, so partial accepts/rejects never leave dangling links.
+  function sanitize(spec) {
+    const stepIds = new Set((spec.steps || []).map((s) => s.id)), inputIds = new Set((spec.inputs || []).map((i) => i.id));
+    const fix = (c) => { let r = c; for (const id of condInputIds(c)) if (!inputIds.has(id)) r = stripInput(r, id); return r; };
+    for (const s of spec.steps || []) {
+      if (s.dependsOn) s.dependsOn = s.dependsOn.filter((d) => stepIds.has(d));
+      if (s.runWhen) { const r = fix(s.runWhen); if (r) s.runWhen = r; else delete s.runWhen; }
+    }
+    for (const o of spec.outputs || []) {
+      if (o.shapedBy) o.shapedBy = o.shapedBy.filter((x) => inputIds.has(x) || stepIds.has(x));
+      for (const it of o.items || []) if (it && typeof it === 'object' && it.when) { const r = fix(it.when); if (r) it.when = r; else delete it.when; }
+    }
+    return spec;
+  }
+
+  // Pull the JSON object out of a chat reply: a ```json fence (the longest one), else the outermost braces.
+  function extractJson(text) {
+    const src = String(text || '');
+    const fences = [...src.matchAll(/```[a-zA-Z]*\s*([\s\S]*?)```/g)].map((m) => m[1].trim()).filter((s) => s.startsWith('{'));
+    const raw = fences.length ? fences.sort((a, b) => b.length - a.length)[0] : src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1);
+    if (!raw || !raw.startsWith('{')) throw new Error('No JSON object found in the reply. Paste the whole reply, including the code block.');
+    let obj; try { obj = JSON.parse(raw); } catch (e) { throw new Error('The JSON in the reply is not valid: ' + e.message); }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('The reply must be a JSON object.');
+    if (!Array.isArray(obj.steps)) throw new Error('The JSON has no "steps" list, so it does not look like a skill spec.');
+    const ids = new Set();
+    for (const s of obj.steps) { if (!s || typeof s.id !== 'string') throw new Error('Every step needs a text "id".'); if (ids.has(s.id)) throw new Error(`Two steps share the id "${s.id}".`); ids.add(s.id); }
+    layers(obj); // unknown dependsOn or a cycle throws with a readable message
+    return obj;
+  }
+  // Fold a chat assistant's reply into the current plan: mark it enhanced, keep what a chat reply tends to drop
+  // (card positions, the user's notes, the output folder), and clean dangling references.
+  function mergeImported(imported, cur) {
+    const m = clone(imported); m.status = 'enhanced';
+    if (cur.outputDir && m.outputDir === undefined) m.outputDir = cur.outputDir;
+    for (const s of m.steps) {
+      const c = (cur.steps || []).find((x) => x.id === s.id); if (!c) continue;
+      if (c.x !== undefined && s.x === undefined) { s.x = c.x; s.y = c.y; }
+      if (c.userNote && s.userNote === undefined) s.userNote = c.userNote;
+    }
+    return sanitize(m);
+  }
+
+  const api = { extractJson, mergeImported, diffSpecs, applyChange, sanitize, checkCond, describeCond, defaultSelections, layers, evaluate, visibleItems, layout, condInputIds, inputUsage, stripInput, usesOption, toClauses, fromClauses, parallelIssues, ioIssues, routeEdge, segHits };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.SkillCore = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+/*CORE-END*/
+</script>
+<script type="application/json" id="fallback-spec">
+{
+  "name": "PR Review Skill",
+  "description": "Example spec. Reviews a pull request; the depth of review depends on a few dynamic inputs.",
+  "inputs": [
+    { "id": "pr_url", "label": "PR URL", "kind": "data", "options": [] },
+    {
+      "id": "depth",
+      "label": "Review depth",
+      "kind": "dynamic",
+      "options": [{ "id": "quick", "label": "Quick" }, { "id": "full", "label": "Full" }],
+      "default": "quick"
+    },
+    {
+      "id": "has_tests",
+      "label": "PR touches tests?",
+      "kind": "dynamic",
+      "options": [{ "id": "yes", "label": "Yes" }, { "id": "no", "label": "No" }],
+      "default": "yes"
+    },
+    {
+      "id": "security",
+      "label": "Security scan",
+      "kind": "dynamic",
+      "options": [{ "id": "on", "label": "On" }, { "id": "off", "label": "Off" }],
+      "default": "off"
+    }
+  ],
+  "steps": [
+    {
+      "id": "fetch",
+      "title": "Fetch PR diff",
+      "summary": "Pull the diff and metadata for the PR.",
+      "detail": "Uses the PR URL to download:\n\n- the unified diff\n- title, description, labels\n- list of changed files",
+      "reads": ["pr_url"],
+      "produces": ["diff"]
+    },
+    {
+      "id": "classify",
+      "title": "Classify changes",
+      "summary": "Tag each changed file (code, tests, config, docs).",
+      "detail": "The classification **decides which reviewers are worth spawning** in the next stage.",
+      "dependsOn": ["fetch"]
+    },
+    {
+      "id": "style",
+      "title": "Style review",
+      "summary": "Naming, formatting, obvious smells.",
+      "detail": "Always runs. Cheap and fast.",
+      "dependsOn": ["classify"],
+      "parallelGroup": "review"
+    },
+    {
+      "id": "logic",
+      "title": "Deep logic review",
+      "summary": "Trace behavior, edge cases, error paths.",
+      "detail": "Only worth the cost on a **full** review.",
+      "dependsOn": ["classify"],
+      "parallelGroup": "review",
+      "runWhen": { "input": "depth", "is": "full" }
+    },
+    {
+      "id": "tests",
+      "title": "Test coverage review",
+      "summary": "Are the new behaviors actually tested?",
+      "detail": "Skipped when the PR does not touch tests.",
+      "dependsOn": ["classify"],
+      "parallelGroup": "review",
+      "runWhen": { "input": "has_tests", "is": "yes" }
+    },
+    {
+      "id": "sec",
+      "title": "Security scan",
+      "summary": "Secrets, injection, unsafe deps.",
+      "detail": "Opt-in. Adds a findings section to the report.",
+      "dependsOn": ["classify"],
+      "parallelGroup": "review",
+      "runWhen": { "input": "security", "is": "on" }
+    },
+    {
+      "id": "merge",
+      "title": "Merge findings",
+      "summary": "Join all reviewer outputs, dedupe, rank by severity.",
+      "detail": "Join step. Runs as long as **at least one** reviewer ran.",
+      "dependsOn": ["style", "logic", "tests", "sec"]
+    },
+    {
+      "id": "report",
+      "title": "Write report",
+      "summary": "Produce the final review comment.",
+      "detail": "Formats merged findings into one review.",
+      "dependsOn": ["merge"],
+      "produces": ["report"]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "plan",
+      "label": "Review plan (evolves)",
+      "kind": "intermediate",
+      "summary": "The checklist the skill builds after classification. Its contents depend on the inputs.",
+      "items": [
+        { "text": "Check naming and formatting" },
+        { "text": "Trace edge cases and error paths", "when": { "input": "depth", "is": "full" } },
+        { "text": "Verify new behavior has tests", "when": { "input": "has_tests", "is": "yes" } },
+        { "text": "Scan for secrets and injection", "when": { "input": "security", "is": "on" } }
+      ],
+      "shapedBy": ["depth", "has_tests", "security"]
+    },
+    {
+      "id": "report_out",
+      "label": "Review report",
+      "kind": "final",
+      "summary": "One ranked review comment posted to the PR."
+    }
+  ]
+}
+</script>
+<script>
+// Served over http by scripts/skillviz.js: read the spec next to the page (override with ?spec=).
+// Opened from file:// or a preview: the fetch fails and the embedded example spec is shown read-only.
+const SPEC_URL = new URLSearchParams(location.search).get('spec') || 'skill-spec.json';
+const IS_HTTP = /^https?:$/.test(location.protocol);
+const POLL_MS = 1000;
+const C = window.SkillCore;
+const CARD_W = 250, BASE_H = 86, CTL_H = 46;
+let spec = null, lastText = '', sel = {}, selectedStep = null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function md(src) {
+  const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`(.+?)`/g, '<code>$1</code>');
+  return String(src || '').split(/\n\n+/).map((blk) => {
+    const lines = blk.split('\n');
+    if (lines.every((l) => /^\s*[-*] /.test(l))) return '<ul>' + lines.map((l) => '<li>' + inline(l.replace(/^\s*[-*] /, '')) + '</li>').join('') + '</ul>';
+    return '<p>' + inline(blk) + '</p>';
+  }).join('');
+}
+
+function setBanner(msg) { const b = $('banner'); b.style.display = msg ? 'block' : 'none'; b.textContent = msg || ''; }
+
+function mergeSelections(next) {
+  const d = C.defaultSelections(next), out = {};
+  for (const i of next.inputs || []) {
+    if (i.kind !== 'dynamic') continue;
+    out[i.id] = (i.options || []).some((o) => o.id === sel[i.id]) ? sel[i.id] : d[i.id];
+  }
+  return out;
+}
+
+// Input ids referenced by a condition (runWhen / when).
+function condInputs(c, acc = []) {
+  if (!c) return acc;
+  if (c.all) c.all.forEach((x) => condInputs(x, acc));
+  else if (c.any) c.any.forEach((x) => condInputs(x, acc));
+  else if (c.input && !acc.includes(c.input)) acc.push(c.input);
+  return acc;
+}
+const dynInput = (id) => (spec.inputs || []).find((i) => i.id === id && i.kind === 'dynamic');
+const stepToggles = (s) => condInputs(s.runWhen).map(dynInput).filter(Boolean);
+
+function toggleHTML(inp) {
+  return `<div class="ctl"><label>${esc(inp.label || inp.id)}</label><div class="seg" role="group" aria-label="${esc(inp.label || inp.id)}">` +
+    (inp.options || []).map((o) => `<button type="button" data-input="${esc(inp.id)}" data-opt="${esc(o.id)}" aria-pressed="${sel[inp.id] === o.id}">${esc(o.label || o.id)}</button>`).join('') +
+    '</div></div>';
+}
+
+function nodeInner(s, e, rop, issues) {
+  const isJoin = (s.dependsOn || []).length > 1;
+  const badge = !e.active ? '<i class="badge skip">SKIPPED</i>' : isJoin ? '<i class="badge join">JOIN</i>' : s.runWhen ? '<i class="badge dyn">IF</i>' : '';
+  return `<i class="port in"></i><i class="port out"></i>${rop ? `<i class="rbadge ${rop}">${rop === 'added' ? 'NEW' : 'CHANGED'}</i>` : ''}${badge}<b>${esc(s.title || s.id)}${s.userNote ? ' \u270E' : ''}${issues.some((i) => i.steps.includes(s.id)) ? ' \u26A0' : ''}</b><span>${esc(s.summary)}</span>${stepToggles(s).map(toggleHTML).join('')}`;
+}
+
+function renderBoard() {
+  const ev = C.evaluate(spec, sel), steps = spec.steps || [], chart = $('chart');
+  for (const id of [...multi]) if (!steps.some((s) => s.id === id)) multi.delete(id);
+  const issues = [...C.parallelIssues(spec), ...C.ioIssues(spec)];
+  const reviewOps = new Map(review().filter((c) => c.kind === 'step' && c.op !== 'removed').map((c) => [c.key, c.op]));
+  const reviewOpOf = (s) => reviewOps.get(s.id);
+  // Measure each card with its real content, so long titles and toggle labels never spill out of it.
+  const meas = document.createElement('div');
+  meas.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden';
+  meas.innerHTML = steps.map((s) => `<div class="node${s.runWhen ? ' cond' : ''}" style="position:relative;width:${CARD_W}px">${nodeInner(s, ev.get(s.id), reviewOpOf(s), issues)}</div>`).join('');
+  document.body.appendChild(meas);
+  const measured = new Map(steps.map((s, i) => [s.id, Math.ceil(meas.children[i].getBoundingClientRect().height)]));
+  meas.remove();
+  const hOf = (s) => Math.max(BASE_H, measured.get(s.id) || 0);
+  const L = C.layout(spec, { w: CARD_W, hOf, gx: 80, gy: 30 });
+  lastLayout = L;
+
+  // Inputs that gate nothing still need a toggle: put them in a strip above the board.
+  const used = new Set(steps.flatMap((s) => condInputs(s.runWhen)));
+  const loose = (spec.inputs || []).filter((i) => i.kind === 'dynamic' && !used.has(i.id));
+  const dataIn = (spec.inputs || []).filter((i) => i.kind !== 'dynamic');
+  $('strip').innerHTML = loose.map(toggleHTML).join('') + (dataIn.length ? '<div class="bar"><span class="hint">Data inputs:</span>' + dataIn.map((i) => `<span class="chip">${esc(i.label || i.id)}</span>`).join('') + '</div>' : '');
+  const stripH = $('strip').children.length ? $('strip').offsetHeight + 8 : 0;
+  const top = stripH;
+
+  // Output cards form a final column. Build them first and measure real heights so they never overlap.
+  const outs = spec.outputs || [], outX = L.width + 10, outW = 270;
+  chart.innerHTML = '';
+  const outEls = outs.map((o) => {
+    const items = C.visibleItems(o, sel);
+    const shaped = (o.shapedBy || []).map((id) => `<span class="chip">${esc(id)}</span>`).join('');
+    const el = document.createElement('div');
+    el.className = 'outcard'; el.style.cssText = `left:${outX}px;top:0;width:${outW}px`;
+    el.innerHTML = `<div class="kind">${o.kind === 'intermediate' ? 'Dynamic output (evolves)' : 'Final output'}</div><h3>${esc(o.label || o.id)}</h3><p>${esc(o.summary)}</p>` +
+      (shaped ? `<div class="hint">Shaped by ${shaped}</div>` : '') +
+      (items.length ? '<ul>' + items.map((i) => `<li class="${i.active ? '' : 'off'}" title="${esc(i.why)}">${esc(i.text)}</li>`).join('') + '</ul>' : '');
+    chart.appendChild(el);
+    return el;
+  });
+  let oy = 24;
+  const outBoxes = outs.map((o, i) => { const h = outEls[i].offsetHeight, b = { o, x: outX, y: oy, w: outW, h }; outEls[i].style.top = oy + top + 'px'; oy += h + 20; return b; });
+  const width = outs.length ? outX + outW + 40 : L.width;
+  const height = Math.max(L.height, oy + 10) + top;
+  chart.style.width = width + 'px'; chart.style.height = height + 'px';
+  content = { w: width, h: height };
+
+  const sinks = steps.filter((s) => !steps.some((t) => (t.dependsOn || []).includes(s.id)));
+  let svg = `<svg width="${width}" height="${height}"><defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L8,4L0,8z" fill="currentColor"/></marker></defs>`;
+  // Obstacles for connectors: every lane and output card except the ones the two ends sit in. Inside a shared
+  // parallel lane, the other cards in it still count.
+  const groupOf = new Map();
+  for (const g of L.groups) for (const st of steps) if (st.parallelGroup === g.name) groupOf.set(st.id, g);
+  const obstaclesFor = (fromId, toId, toBox) => {
+    const ends = new Set([fromId, toId]), out = [];
+    for (const m of L.mains) if (!ends.has(m.id)) out.push(m);
+    for (const g of L.groups) {
+      const mine = [...ends].some((id) => groupOf.get(id) === g);
+      if (!mine) { out.push(g); continue; }
+      for (const st of steps) if (groupOf.get(st.id) === g && !ends.has(st.id)) { const n = L.nodes.get(st.id); out.push({ x: n.x - 4, y: n.y - 4, w: n.w + 8, h: n.h + 8 }); }
+    }
+    for (const ob of outBoxes) if (ob !== toBox) out.push(ob);
+    return out;
+  };
+  const edge = (a, b, live, cls, ids, obs) => {
+    const pts = C.routeEdge(a, b, obs).map(([x, y]) => [x, y + top]);
+    pts[pts.length - 1][0] -= 2; // leave room for the arrow head so it touches the card
+    const d = 'M' + pts.map((p) => p.join(',')).join(' L');
+    const k = Math.floor(pts.length / 2), dx = (pts[k - 1][0] + pts[k][0]) / 2, dy = (pts[k - 1][1] + pts[k][1]) / 2;
+    const col = cls || (live ? 'var(--accent)' : 'var(--skip)');
+    return `<g class="edge"><path d="${d}" fill="none" stroke="${col}" style="color:${col}" stroke-width="${live ? 2 : 1.2}" stroke-dasharray="${live ? '' : '4 4'}" stroke-linejoin="round" marker-end="url(#ar)"/>` +
+      (ids && EDIT ? `<path class="edge-hit" d="${d}"/><g class="edel" data-from="${esc(ids[0])}" data-to="${esc(ids[1])}" transform="translate(${dx},${dy})"><title>Remove this connection</title><circle r="10"/><text y="5" text-anchor="middle">\u00d7</text></g>` : '') + '</g>';
+  };
+  for (const s of steps) for (const dep of s.dependsOn || []) svg += edge(L.nodes.get(dep), L.nodes.get(s.id), ev.get(dep).active && ev.get(s.id).active, null, [dep, s.id], obstaclesFor(dep, s.id));
+  if (conn && L.nodes.get(conn.from)) { const a = L.nodes.get(conn.from); svg += `<path d="M${a.x + a.w},${a.y + a.h / 2 + top} L${conn.x},${conn.y}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="6 4"/>`; }
+  for (const b of outBoxes) if (b.o.kind === 'final') for (const s of sinks) svg += edge(L.nodes.get(s.id), { x: b.x, y: b.y, w: b.w, h: b.h }, ev.get(s.id).active, 'var(--out)', null, obstaclesFor(s.id, null, b));
+  chart.insertAdjacentHTML('afterbegin', svg + '</svg>');
+
+  for (const m of L.mains) chart.insertAdjacentHTML('beforeend', `<div class="lane main" style="left:${m.x}px;top:${m.y + top}px;width:${m.w}px;height:${m.h}px"></div><div class="lane-label main" style="left:${m.x + 10}px;top:${m.y + top + 5}px">MAIN AGENT</div>`);
+  for (const g of L.groups) chart.insertAdjacentHTML('beforeend', `<div class="lane" style="left:${g.x}px;top:${g.y + top}px;width:${g.w}px;height:${g.h}px"></div><div class="lane-label${issues.some((i) => i.group === g.name) ? ' bad' : ''}" style="left:${g.x + 10}px;top:${g.y + top + 5}px" title="${esc(issues.filter((i) => i.group === g.name).map((i) => i.message).join('\n'))}">PARALLEL: ${esc(g.name)}${issues.some((i) => i.group === g.name) ? ' \u26A0' : ''}</div>`);
+
+  for (const s of steps) {
+    const n = L.nodes.get(s.id), e = ev.get(s.id);
+    const el = document.createElement('div');
+    el.className = 'node' + (s.runWhen ? ' cond' : '') + (e.active ? '' : ' skipped') + (selectedStep === s.id ? ' selected' : '') + (multi.has(s.id) ? ' multi' : '');
+    el.style.cssText = `left:${n.x}px;top:${n.y + top}px;width:${n.w}px;height:${n.h}px`;
+    el.dataset.id = s.id; el.tabIndex = 0; el.setAttribute('role', 'button'); el.setAttribute('aria-label', `${s.title || s.id}, ${e.active ? 'runs' : 'skipped'}`);
+    const rop = reviewOps.get(s.id);
+    if (rop) el.classList.add('chg-' + rop);
+    const mine = issues.filter((i) => i.steps.includes(s.id)), tips = [];
+    if (s.userNote) tips.push('Note for agent: ' + s.userNote);
+    mine.forEach((i) => tips.push('Warning: ' + i.message));
+    if (tips.length) el.title = tips.join('\n');
+    el.innerHTML = nodeInner(s, e, rop, issues);
+    el.onclick = (ev) => { if (EDIT && (ev.shiftKey || ev.metaKey || ev.ctrlKey)) toggleMulti(s.id); else { multi.clear(); openSheet(s.id); } };
+    el.onkeydown = (k) => { if (k.target === el && (k.key === 'Enter' || k.key === ' ')) { k.preventDefault(); openSheet(s.id); } };
+    chart.appendChild(el);
+  }
+
+}
+
+// One delegated handler for every toggle button, on cards or in the strip.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-input]');
+  if (!btn) return;
+  e.stopPropagation();
+  sel[btn.dataset.input] = btn.dataset.opt;
+  renderAll();
+}, true);
+
+function openSheet(id) { stopFilesPoll(); selectedStep = id; sheetMode = 'step'; sheetUI.newInput = false; renderAll(); $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false'); }
+function closeSheet() { stopFilesPoll(); handoffUI.err = ''; selectedStep = null; sheetMode = 'step'; reviewUI.err = {}; sheetUI.newInput = false; panelUI.confirmDelete = null; panelUI.newInput = false; panelUI.err = {}; $('sheet').classList.remove('open'); $('sheet').setAttribute('aria-hidden', 'true'); renderAll(); }
+$('close').onclick = closeSheet;
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (selectedStep || sheetMode !== 'step')) closeSheet(); });
+
+const sheetUI = { newInput: false };
+let sheetMode = 'step'; // 'step' (edit the selected card) or 'inputs' (the inputs panel)
+const panelUI = { confirmDelete: null, newInput: false, err: {} };
+function renderSheet(ev) {
+  if (sheetMode === 'inputs') { renderInputsPanel(); return; }
+  if (sheetMode === 'review') { renderReviewPanel(); return; }
+  if (sheetMode === 'files') { renderFilesPanel(); return; }
+  if (sheetMode === 'handoff') { renderHandoffPanel(); return; }
+  const s = (spec.steps || []).find((x) => x.id === selectedStep);
+  if (!s) { $('sheet').classList.remove('open'); return; }
+  const e = ev.get(s.id), title = (id) => ((spec.steps || []).find((x) => x.id === id) || {}).title || id;
+  const chips = (arr) => (arr || []).map((x) => `<span class="chip">${esc(x)}</span>`).join('') || '<span class="hint">none</span>';
+  const ioChip = (id) => { const a = (spec.artifacts || []).find((x) => x.id === id), i = (spec.inputs || []).find((x) => x.id === id);
+    return `<span class="chip" title="${esc(a ? a.label || '' : i ? 'input' : 'not defined')}">${esc(a && a.path ? `${id} \u2192 ${a.path}${a.format ? ' (' + a.format + ')' : ''}` : i ? `${i.label || id} (input)` : id)}</span>`; };
+  const ioRow = (label, arr, missing) => `<div class="row"><small>${label}</small>${Array.isArray(arr) ? arr.map(ioChip).join('') || '<span class="hint">nothing</span>' : `<span class="hint">${missing}</span>`}</div>`;
+  const io = ioRow('Reads', s.reads, 'not defined yet') + ioRow('Produces', s.produces, 'not defined yet') +
+    C.ioIssues(spec).filter((i) => i.steps.includes(s.id)).map((i) => `<div class="warn soft" role="note">${esc(i.message)}</div>`).join('');
+  const rm = (d) => (EDIT ? ` <button type="button" class="chipx" data-rm="${esc(d)}" aria-label="Stop waiting for ${esc(title(d))}" title="Remove this connection">\u00d7</button>` : '');
+  const waits = `<div class="row"><small>Waits for</small>${(s.dependsOn || []).map((d) => `<span class="chip">${esc(title(d))}${rm(d)}</span>`).join('') || '<span class="hint">nothing (starts the flow)</span>'}</div>`;
+  const status = `<div class="status ${e.active ? '' : 'skipped'}">${e.active ? 'Runs.' : 'Skipped.'} ${esc(e.reason)}</div>`;
+  if (!EDIT) {
+    $('sheetBody').innerHTML = `<h2>${esc(s.title)}</h2><div class="hint">${esc(s.summary)}</div>${status}
+      <div class="detail">${md(s.detail || '')}</div>${waits}
+      ${s.parallelGroup ? `<div class="row"><small>Parallel group</small>${chips([s.parallelGroup])}</div>` : ''}
+      ${io}`;
+    return;
+  }
+  const dyn = (spec.inputs || []).filter((i) => i.kind === 'dynamic'), cl = C.toClauses(s.runWhen);
+  const opLabel = { is: 'is', isNot: 'is not', in: 'is one of' };
+  const opOf = (c) => (c.is !== undefined ? 'is' : c.isNot !== undefined ? 'isNot' : 'in');
+  const clauseRow = (c, i) => {
+    const known = (spec.inputs || []).find((x) => x.id === c.input), opts = (known && known.options) || [], op = opOf(c), val = c[op];
+    const inputSel = `<select data-c="input" aria-label="Input">${dyn.map((x) => `<option value="${esc(x.id)}"${x.id === c.input ? ' selected' : ''}>${esc(x.label || x.id)}</option>`).join('')}${dyn.some((x) => x.id === c.input) ? '' : `<option value="${esc(c.input)}" selected>${esc(c.input)} (not a dynamic input)</option>`}</select>`;
+    const opSel = `<select data-c="op" aria-label="Comparison">${['is', 'isNot', 'in'].map((k) => `<option value="${k}"${k === op ? ' selected' : ''}>${opLabel[k]}</option>`).join('')}</select>`;
+    const value = op === 'in'
+      ? `<div class="ckset">${opts.map((o) => `<label class="ck"><input type="checkbox" data-c="in" value="${esc(o.id)}"${val.includes(o.id) ? ' checked' : ''}> ${esc(o.label || o.id)}</label>`).join('')}</div><div class="ferr" role="alert" hidden>Pick at least one value.</div>`
+      : `<select data-c="val" aria-label="Value">${opts.map((o) => `<option value="${esc(o.id)}"${val === o.id ? ' selected' : ''}>${esc(o.label || o.id)}</option>`).join('')}</select>`;
+    return `<div class="clause" data-i="${i}">${inputSel}${opSel}${value}<button type="button" class="chipx" data-c="rm" aria-label="Remove this condition" title="Remove this condition">×</button></div>`;
+  };
+  const cond = cl === null
+    ? `<div class="row"><small>Runs when (custom)</small>${esc(C.describeCond(s.runWhen))}<div class="hint">Too nested to edit here; an agent can refine it.</div><button type="button" class="act ghost" id="condClear">Clear</button></div>`
+    : `<div class="row"><small>Runs when</small>${cl.clauses.length ? '' : '<span class="hint">Always. Add a condition to make this step optional.</span>'}</div>` +
+      (cl.clauses.length > 1 ? `<label class="f">Match<select data-c="mode"><option value="all"${cl.mode === 'all' ? ' selected' : ''}>All of these</option><option value="any"${cl.mode === 'any' ? ' selected' : ''}>Any of these</option></select></label>` : '') +
+      cl.clauses.map(clauseRow).join('') +
+      `<div class="row"><button type="button" class="act ghost" id="addClause">+ Add condition</button> <button type="button" class="act ghost" id="newInputBtn">+ New input</button></div>`;
+  const newIn = sheetUI.newInput ? newInputFormHTML('Create and use here') : '';
+  $('sheetBody').innerHTML = `<h2>${esc(s.title || s.id)}</h2>${status}
+    <label class="f">Title<input type="text" data-f="title" value="${esc(s.title)}"></label>
+    <label class="f">What it does (short)<input type="text" data-f="summary" value="${esc(s.summary)}"></label>
+    <label class="f">Note for the agent<textarea data-f="userNote" rows="2" placeholder="What you want here, in your own words">${esc(s.userNote)}</textarea></label>
+    <label class="f">Details (markdown)<textarea data-f="detail" rows="6">${esc(s.detail)}</textarea></label>
+    <label class="f">Parallel group<input type="text" data-f="parallelGroup" value="${esc(s.parallelGroup)}" placeholder="steps sharing a name run together"></label>
+    ${C.parallelIssues(spec).filter((i) => i.steps.includes(s.id)).map((i) => `<div class="warn soft" role="note">${esc(i.message)}<br>${i.kind === 'nojoin' ? `<button type="button" class="act" data-par="join" data-group="${esc(i.group)}">Add a join step</button>` : i.kind === 'single' ? `<button type="button" class="act ghost" data-par="clear" data-group="${esc(i.group)}">Remove this group name</button>` : `<button type="button" class="act" data-par="align" data-group="${esc(i.group)}">Give them the same parents</button>`}</div>`).join('')}
+    ${cond}${newIn}${waits}
+    ${io}
+    <div class="row"><button type="button" class="act danger" id="delStep">Delete step</button></div>`;
+}
+
+const slug = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'x';
+function uniq(base, used) { let id = base, n = 2; while (used.has(id)) id = base + '_' + n++; return id; }
+const stepOf = (sp) => (sp.steps || []).find((x) => x.id === selectedStep);
+
+function clearFieldError(inputId) { const i = $(inputId), m = $(inputId + 'Err'); if (i) i.removeAttribute('aria-invalid'); if (m) m.hidden = true; }
+$('sheetBody').addEventListener('input', (e) => {
+  if (e.target.id === 'niLabel' || e.target.id === 'niOpts') { clearFieldError(e.target.id); return; }
+  if (sheetMode !== 'step') return;
+  const f = e.target.dataset.f; if (!f || !EDIT) return;
+  const id = selectedStep, v = e.target.value;
+  mutate((sp) => { const s = stepOf(sp); if (!s) return; if (v === '' && f !== 'title') delete s[f]; else s[f] = v; }, { key: id + '.' + f, sheet: false });
+});
+function newInputFormHTML(cta, withType) {
+  return `<div class="newin"><b>New ${withType ? 'input' : 'dynamic input'}</b>
+    <label class="f">Name<input type="text" id="niLabel" placeholder="e.g. Review depth" aria-describedby="niLabelErr"></label>
+    <div class="ferr" id="niLabelErr" role="alert" hidden></div>
+    ${withType ? '<label class="f">Type<select id="niKind"><option value="dynamic">Dynamic: changes which steps run</option><option value="data">Data: information the steps work on</option></select></label>' : ''}
+    <div id="niOptsWrap"><label class="f">Options (comma separated, at least 2)<input type="text" id="niOpts" placeholder="e.g. Quick, Full" aria-describedby="niOptsErr"></label>
+    <div class="ferr" id="niOptsErr" role="alert" hidden></div></div>
+    <button type="button" class="act" id="niCreate">${cta}</button><button type="button" class="act ghost" id="niCancel">Cancel</button></div>`;
+}
+// Validates the new-input form inline. Returns {label, names} or null (errors shown next to the fields).
+function readNewInput() {
+  const kindEl = $('niKind'), isData = !!kindEl && kindEl.value === 'data';
+  const label = $('niLabel').value.trim(), names = $('niOpts').value.split(',').map((x) => x.trim()).filter(Boolean);
+  const bad = (inputId, msg) => { const i = $(inputId), m = $(inputId + 'Err'); i.setAttribute('aria-invalid', 'true'); m.textContent = msg; m.hidden = false; };
+  ['niLabel', 'niOpts'].forEach(clearFieldError);
+  if (!label) bad('niLabel', 'Enter a name for this input.');
+  if (!isData && names.length < 2) bad('niOpts', 'Add at least two options, separated by commas.');
+  if (!label || (!isData && names.length < 2)) { (!label ? $('niLabel') : $('niOpts')).focus(); return null; }
+  return { label, names: isData ? [] : names, isData };
+}
+function addDynamicInput(sp, label, names) { // returns the new input
+  sp.inputs = sp.inputs || [];
+  const iid = uniq(slug(label), new Set(sp.inputs.map((i) => i.id))), used = new Set();
+  const options = names.map((n) => { const oid = uniq(slug(n), used); used.add(oid); return { id: oid, label: n }; });
+  const inp = { id: iid, label, kind: 'dynamic', options, default: options[0].id };
+  sp.inputs.push(inp); return inp;
+}
+
+const clauseIndex = (el) => { const r = el.closest('.clause'); return r ? Number(r.dataset.i) : -1; };
+const firstOpt = (sp, inputId) => (((sp.inputs || []).find((i) => i.id === inputId) || {}).options || [{}])[0].id;
+function editClauses(fn) { // edit the selected step's condition as a flat list of clauses
+  mutate((sp) => {
+    const s = stepOf(sp), cl = s && C.toClauses(s.runWhen); if (!cl) return;
+    fn(cl, sp);
+    const r = C.fromClauses(cl.mode, cl.clauses); if (r) s.runWhen = r; else delete s.runWhen;
+  });
+}
+$('sheetBody').addEventListener('change', (e) => {
+  if (sheetMode !== 'step') return;
+  const c = e.target.dataset.c; if (!c) return;
+  const i = clauseIndex(e.target), v = e.target.value;
+  if (c === 'mode') editClauses((cl) => { cl.mode = v; });
+  else if (c === 'input') editClauses((cl, sp) => { cl.clauses[i] = { input: v, is: firstOpt(sp, v) }; });
+  else if (c === 'op') editClauses((cl, sp) => {
+    const old = cl.clauses[i], k = old.is !== undefined ? 'is' : old.isNot !== undefined ? 'isNot' : 'in';
+    const cur = Array.isArray(old[k]) ? old[k][0] : old[k], nv = cur !== undefined ? cur : firstOpt(sp, old.input);
+    cl.clauses[i] = v === 'in' ? { input: old.input, in: [nv] } : { input: old.input, [v]: nv };
+  });
+  else if (c === 'val') editClauses((cl) => { const old = cl.clauses[i]; cl.clauses[i] = { input: old.input, [old.isNot !== undefined ? 'isNot' : 'is']: v }; });
+  else if (c === 'in') {
+    const row = e.target.closest('.clause'), vals = [...row.querySelectorAll('input[data-c=in]:checked')].map((x) => x.value), err = row.querySelector('.ferr');
+    if (!vals.length) { e.target.checked = true; err.hidden = false; return; } // a condition needs at least one value
+    err.hidden = true; editClauses((cl) => { cl.clauses[i] = { input: cl.clauses[i].input, in: vals }; });
+  }
+});
+$('sheetBody').addEventListener('click', (e) => {
+  if (sheetMode !== 'step') return;
+  const rmBtn = e.target.closest('[data-rm]'); if (rmBtn) { removeEdge(rmBtn.dataset.rm, selectedStep); return; }
+  const par = e.target.closest('[data-par]');
+  if (par) {
+    const g = par.dataset.group, ids = (spec.steps || []).filter((x) => x.parallelGroup === g).map((x) => x.id);
+    if (par.dataset.par === 'join') addJoin(ids); else if (par.dataset.par === 'align') applyParallel(ids, g);
+    else mutate((sp) => { const s = stepOf(sp); if (s) delete s.parallelGroup; });
+    return;
+  }
+  const rmClause = e.target.closest('[data-c=rm]'); if (rmClause) { const i = clauseIndex(rmClause); editClauses((cl) => { cl.clauses.splice(i, 1); }); return; }
+  const id = e.target.id, dyn = (spec.inputs || []).filter((x) => x.kind === 'dynamic');
+  if (id === 'condClear') mutate((sp) => { delete stepOf(sp).runWhen; });
+  else if (id === 'delStep') deleteStep(selectedStep);
+  else if (id === 'newInputBtn') { sheetUI.newInput = true; renderSheet(C.evaluate(spec, sel)); }
+  else if (id === 'addClause') {
+    if (!dyn.length) { sheetUI.newInput = true; renderSheet(C.evaluate(spec, sel)); return; }
+    editClauses((cl) => { const used = new Set(cl.clauses.map((x) => x.input)), pick = dyn.find((d) => !used.has(d.id)) || dyn[0]; cl.clauses.push({ input: pick.id, is: (pick.options || [{}])[0].id }); });
+  }
+  else if (id === 'niCancel') { sheetUI.newInput = false; renderSheet(C.evaluate(spec, sel)); }
+  else if (id === 'niCreate') {
+    const v = readNewInput(); if (!v) return;
+    sheetUI.newInput = false;
+    mutate((sp) => {
+      const inp = addDynamicInput(sp, v.label, v.names), s = stepOf(sp), cl = C.toClauses(s.runWhen);
+      if (cl) { cl.clauses.push({ input: inp.id, is: inp.options[0].id }); s.runWhen = C.fromClauses(cl.mode, cl.clauses); }
+    });
+  }
+});
+
+// ---- Inputs panel ----
+function usageOf(iid) {
+  const u = C.inputUsage(spec, iid), name = (id) => ((spec.steps || []).find((s) => s.id === id) || {}).title || id, parts = [];
+  if (u.steps.length) parts.push(u.steps.map(name).join(', '));
+  if (u.items.length) parts.push(`${u.items.length} checklist item${u.items.length > 1 ? 's' : ''}`);
+  return { u, text: parts.join(' and '), used: u.steps.length + u.items.length };
+}
+function renderInputsPanel() {
+  const card = (inp) => {
+    const { text, used } = usageOf(inp.id), dynamic = inp.kind === 'dynamic', opts = dynamic ? inp.options || [] : [], nm = esc(inp.label || inp.id);
+    const confirm = panelUI.confirmDelete === inp.id ? `<div class="warn" role="alert">Used by ${esc(text)}. Deleting it removes those conditions, so the steps will always run.<br><button type="button" class="act danger" data-p="delyes">Delete anyway</button><button type="button" class="act ghost" data-p="delno">Cancel</button></div>` : '';
+    const err = panelUI.err[inp.id] ? `<div class="ferr" role="alert">${esc(panelUI.err[inp.id])}</div>` : '';
+    const optRows = dynamic ? opts.map((o) => `<div class="optrow" data-oid="${esc(o.id)}"><input type="text" data-p="optlabel" value="${esc(o.label || o.id)}" aria-label="Option name"><label class="ck"><input type="radio" name="def_${esc(inp.id)}" data-p="default"${inp.default === o.id ? ' checked' : ''}> default</label><button type="button" class="chipx" data-p="delopt" aria-label="Delete option ${esc(o.label || o.id)}" title="Delete option">×</button></div>`).join('') +
+      `<div class="optrow"><input type="text" data-p="newopt" placeholder="Add an option" aria-label="New option name"><button type="button" class="act ghost" data-p="addopt">Add</button></div>` : '';
+    return `<div class="inp" data-iid="${esc(inp.id)}"><div class="inprow"><input type="text" data-p="label" value="${esc(inp.label || inp.id)}" aria-label="Input name"><span class="tag${dynamic ? ' dyn' : ''}">${dynamic ? 'dynamic' : 'data'}</span><button type="button" class="chipx" data-p="delinput" aria-label="Delete input ${nm}" title="Delete input">×</button></div>
+      <div class="hint">${used ? 'Used by ' + esc(text) : 'Not used yet'}</div>${confirm}${optRows}${err}</div>`;
+  };
+  const inputs = spec.inputs || [];
+  $('sheetBody').innerHTML = `<h2>Inputs</h2><p class="hint">Dynamic inputs change which steps run, and show as a toggle on the cards that use them. Data inputs only change what steps work on.</p>` +
+    (inputs.map(card).join('') || '<p class="hint">No inputs yet.</p>') +
+    (panelUI.newInput ? newInputFormHTML('Create input', true) : '<div class="row"><button type="button" class="act" data-p="new">+ New input</button></div>');
+}
+function openInputs() {
+  stopFilesPoll(); selectedStep = null; sheetMode = 'inputs'; panelUI.confirmDelete = null; panelUI.err = {};
+  renderAll(); $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false');
+}
+$('inputsBtn').onclick = openInputs;
+const inputAt = (sp, iid) => (sp.inputs || []).find((i) => i.id === iid);
+const iidOf = (el) => { const r = el.closest('.inp'); return r && r.dataset.iid; };
+const oidOf = (el) => { const r = el.closest('.optrow'); return r && r.dataset.oid; };
+function deleteInput(iid) {
+  mutate((sp) => {
+    sp.inputs = (sp.inputs || []).filter((i) => i.id !== iid);
+    for (const s of sp.steps || []) if (s.runWhen) { const r = C.stripInput(s.runWhen, iid); if (r) s.runWhen = r; else delete s.runWhen; }
+    for (const o of sp.outputs || []) {
+      if (o.shapedBy) o.shapedBy = o.shapedBy.filter((x) => x !== iid);
+      for (const it of o.items || []) if (it && typeof it === 'object' && it.when) { const r = C.stripInput(it.when, iid); if (r) it.when = r; else delete it.when; }
+    }
+  });
+}
+function deleteOption(iid, oid) {
+  const inp = inputAt(spec, iid), name = (id) => ((spec.steps || []).find((s) => s.id === id) || {}).title || id;
+  if ((inp.options || []).length <= 2) { panelUI.err[iid] = 'A dynamic input needs at least two options.'; renderInputsPanel(); return; }
+  const stepsUsing = (spec.steps || []).filter((s) => C.usesOption(s.runWhen, iid, oid)).map((s) => name(s.id));
+  const itemsUsing = (spec.outputs || []).reduce((n, o) => n + (o.items || []).filter((it) => it && typeof it === 'object' && C.usesOption(it.when, iid, oid)).length, 0);
+  if (stepsUsing.length || itemsUsing) {
+    panelUI.err[iid] = 'That option is used by ' + [stepsUsing.join(', '), itemsUsing ? `${itemsUsing} checklist item${itemsUsing > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ') + '. Change those conditions first.';
+    renderInputsPanel(); return;
+  }
+  panelUI.err[iid] = null;
+  mutate((sp) => { const i = inputAt(sp, iid); i.options = i.options.filter((o) => o.id !== oid); if (i.default === oid) i.default = i.options[0].id; });
+}
+function addOption(iid, label, row) {
+  const v = label.trim(), inp = inputAt(spec, iid);
+  if (!v) { panelUI.err[iid] = 'Enter an option name.'; renderInputsPanel(); return; }
+  if ((inp.options || []).some((o) => (o.label || o.id).toLowerCase() === v.toLowerCase())) { panelUI.err[iid] = 'That option already exists.'; renderInputsPanel(); return; }
+  panelUI.err[iid] = null;
+  mutate((sp) => { const i = inputAt(sp, iid); i.options = i.options || []; i.options.push({ id: uniq(slug(v), new Set(i.options.map((o) => o.id))), label: v }); });
+}
+$('sheetBody').addEventListener('input', (e) => {
+  if (sheetMode !== 'inputs') return;
+  const p = e.target.dataset.p, v = e.target.value, iid = iidOf(e.target), oid = oidOf(e.target);
+  if (p === 'label') mutate((sp) => { inputAt(sp, iid).label = v; }, { key: 'in.' + iid, sheet: false });
+  else if (p === 'optlabel') mutate((sp) => { const o = inputAt(sp, iid).options.find((x) => x.id === oid); if (o) o.label = v; }, { key: 'op.' + iid + '.' + oid, sheet: false });
+});
+$('sheetBody').addEventListener('change', (e) => {
+  if (sheetMode !== 'inputs') return;
+  if (e.target.id === 'niKind') { $('niOptsWrap').hidden = e.target.value === 'data'; return; }
+  if (e.target.dataset.p === 'default') { const iid = iidOf(e.target), oid = oidOf(e.target); sel[iid] = oid; mutate((sp) => { inputAt(sp, iid).default = oid; }); }
+});
+$('sheetBody').addEventListener('keydown', (e) => {
+  if (sheetMode !== 'inputs' || e.key !== 'Enter' || e.target.dataset.p !== 'newopt') return;
+  e.preventDefault(); addOption(iidOf(e.target), e.target.value);
+});
+$('sheetBody').addEventListener('click', (e) => {
+  if (sheetMode !== 'inputs') return;
+  const b = e.target.closest('[data-p],#niCreate,#niCancel'); if (!b) return;
+  const p = b.dataset.p, iid = iidOf(b), oid = oidOf(b), again = () => renderInputsPanel();
+  if (p === 'new') { panelUI.newInput = true; again(); }
+  else if (b.id === 'niCancel') { panelUI.newInput = false; again(); }
+  else if (b.id === 'niCreate') {
+    const v = readNewInput(); if (!v) return;
+    panelUI.newInput = false;
+    mutate((sp) => {
+      if (v.isData) { sp.inputs = sp.inputs || []; sp.inputs.push({ id: uniq(slug(v.label), new Set(sp.inputs.map((i) => i.id))), label: v.label, kind: 'data' }); }
+      else addDynamicInput(sp, v.label, v.names);
+    });
+  }
+  else if (p === 'delinput') { if (usageOf(iid).used) { panelUI.confirmDelete = iid; again(); } else deleteInput(iid); }
+  else if (p === 'delyes') { panelUI.confirmDelete = null; deleteInput(iid); }
+  else if (p === 'delno') { panelUI.confirmDelete = null; again(); }
+  else if (p === 'delopt') deleteOption(iid, oid);
+  else if (p === 'addopt') addOption(iid, b.closest('.optrow').querySelector('[data-p=newopt]').value);
+});
+
+// ---- Make parallel / Add join ----
+function toggleMulti(id) { if (multi.has(id)) multi.delete(id); else multi.add(id); renderBoard(); renderSelBar(); }
+function renderSelBar() {
+  const n = multi.size, bar = $('selbar');
+  bar.hidden = !EDIT || n === 0;
+  $('selmsg').textContent = n === 1 ? '1 step selected. Shift-click another.' : `${n} steps selected`;
+  $('parBtn').disabled = $('joinBtn').disabled = n < 2;
+}
+// Give the steps the same parents (those of the left-most one that has any) and the same group name.
+function applyParallel(ids, group) {
+  const byId = (sp, id) => sp.steps.find((s) => s.id === id);
+  let depth; try { depth = C.layers(spec); } catch (e) { return; }
+  const members = ids.map((id) => byId(spec, id)).filter(Boolean);
+  if (members.length < 2) return;
+  const outside = (s) => (s.dependsOn || []).filter((d) => !ids.includes(d));
+  const withParents = members.filter((s) => outside(s).length), pool = withParents.length ? withParents : members; // a loose new card should not erase the others' parents
+  const lead = pool.reduce((a, b) => (depth.get(b.id) < depth.get(a.id) ? b : a));
+  const parents = outside(lead);
+  const name = group || members.map((s) => s.parallelGroup).find(Boolean) || uniq('parallel', new Set((spec.steps || []).map((s) => s.parallelGroup).filter(Boolean)));
+  const trial = JSON.parse(snap()); trial.steps.forEach((s) => { if (ids.includes(s.id)) s.dependsOn = [...parents]; });
+  try { C.layers(trial); } catch (e) { flash('That would create a loop', 3500); return; }
+  const parentNames = parents.map((d) => (byId(spec, d).title || d)).join(', ') || 'nothing (they start the flow)';
+  mutate((sp) => { for (const id of ids) { const s = byId(sp, id); s.dependsOn = [...parents]; s.parallelGroup = name; } });
+  flash(`${ids.length} steps now run together in "${name}" after ${parentNames}. Undo reverts.`, 7000);
+}
+function addJoin(ids) {
+  if (ids.length < 2) return;
+  let newId;
+  mutate((sp) => {
+    newId = uniq('join', new Set(sp.steps.map((s) => s.id)));
+    sp.steps.push({ id: newId, title: 'Join results', summary: 'Collect what the parallel steps produced.', dependsOn: [...ids] });
+  });
+  multi.clear(); openSheet(newId);
+}
+$('parBtn').onclick = () => applyParallel([...multi]);
+$('joinBtn').onclick = () => addJoin([...multi]);
+$('selClear').onclick = () => { multi.clear(); renderBoard(); renderSelBar(); };
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && multi.size && !selectedStep && sheetMode === 'step') { multi.clear(); renderBoard(); renderSelBar(); } });
+
+// ---- Review: what the agent changed since the plan was handed over ----
+const reviewUI = { err: {} };
+const review = () => (spec && spec.status === 'enhanced' ? changes : []);
+async function syncBaseline(hashHeader) {
+  if (hashHeader === baselineHash) return;
+  baselineHash = hashHeader;
+  if (!hashHeader || hashHeader === 'none') baseline = null;
+  else { try { const br = await fetch('/baseline?t=' + Date.now(), { cache: 'no-store' }); if (br.ok) baseline = await br.json(); } catch (e) { /* keep the old one */ } }
+  if (spec) renderAll();
+}
+function renderRevBar() {
+  const n = review().length, bar = $('revbar');
+  bar.hidden = !EDIT || n === 0;
+  $('revmsg').textContent = `The agent changed ${n} thing${n > 1 ? 's' : ''}`;
+}
+async function setBaseline(next) {
+  const { r, j } = await post('/baseline', { spec: next });
+  if (!r.ok) { flash('Could not save the review: ' + (j.error || r.status), 5000); return false; }
+  baseline = next; baselineHash = j.hash; renderAll(); return true;
+}
+const copyOf = (o) => JSON.parse(JSON.stringify(o));
+function acceptChange(id) {
+  const ch = changes.find((c) => c.id === id); if (!ch) return;
+  const nb = copyOf(baseline); C.applyChange(nb, spec, ch); C.sanitize(nb); setBaseline(nb);
+}
+function trialOk(fn) { const trial = copyOf(spec); fn(trial); C.sanitize(trial); try { C.layers(trial); return true; } catch (e) { return false; } }
+function rejectChange(id) {
+  const ch = changes.find((c) => c.id === id); if (!ch) return;
+  if (!trialOk((sp) => C.applyChange(sp, baseline, ch))) { reviewUI.err[id] = 'Rejecting this alone would create a loop with another change. Reject or accept those together.'; renderReviewPanel(); return; }
+  reviewUI.err[id] = null;
+  mutate((sp) => { C.applyChange(sp, baseline, ch); C.sanitize(sp); });
+}
+function acceptAll() { setBaseline(copyOf(spec)); }
+function rejectAll() {
+  const list = changes.slice();
+  if (!trialOk((sp) => list.forEach((ch) => C.applyChange(sp, baseline, ch)))) { flash('Could not reject everything at once. Review the changes one by one.', 5000); return; }
+  mutate((sp) => { list.forEach((ch) => C.applyChange(sp, baseline, ch)); C.sanitize(sp); });
+}
+function openReview() {
+  stopFilesPoll(); selectedStep = null; sheetMode = 'review'; reviewUI.err = {};
+  renderAll(); $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false');
+}
+const COLL = { step: 'steps', input: 'inputs', output: 'outputs', artifact: 'artifacts' };
+function entityOf(sp, c) { return sp && COLL[c.kind] ? (sp[COLL[c.kind]] || []).find((x) => x.id === c.key) : null; }
+function fmtVal(field, v, sp) {
+  if (v === undefined) return '(none)';
+  if (field === 'runWhen') return C.describeCond(v) || '(always)';
+  if (field === 'dependsOn') return (v || []).map((d) => ((sp.steps || []).find((s) => s.id === d) || {}).title || d).join(', ') || '(nothing)';
+  if (field === 'options') return (v || []).map((o) => o.label || o.id).join(', ');
+  if (field === 'items') return (v || []).map((i) => (typeof i === 'string' ? i : i.text + (i.when ? ' [if ' + C.describeCond(i.when) + ']' : ''))).join('; ');
+  if (Array.isArray(v)) return v.map((x) => (typeof x === 'object' ? JSON.stringify(x) : x)).join(', ') || '(none)';
+  const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+  return s.length > 140 ? s.slice(0, 140) + '...' : s || '(empty)';
+}
+function renderReviewPanel() {
+  const list = review(), word = { added: 'NEW', modified: 'CHANGED', removed: 'REMOVED' }, noun = { step: 'step', input: 'input', output: 'output', artifact: 'artifact', meta: '' };
+  const title = (c) => { const e = entityOf(c.op === 'removed' ? baseline : spec, c); return c.kind === 'meta' ? c.key : (e && (e.title || e.label)) || c.key; };
+  const card = (c) => {
+    const before = entityOf(baseline, c), after = entityOf(spec, c);
+    let body = '';
+    if (c.op === 'modified') body = c.fields.map((f) => `<div class="fld"><small>${esc(f)}</small><span class="old">${esc(fmtVal(f, c.kind === 'meta' ? baseline[f] : before[f], baseline))}</span><br>${esc(fmtVal(f, c.kind === 'meta' ? spec[f] : after[f], spec))}</div>`).join('');
+    else { const e = c.op === 'added' ? after : before; body = [e.summary || e.kind && e.kind + ' input', e.dependsOn && e.dependsOn.length ? 'Waits for: ' + fmtVal('dependsOn', e.dependsOn, c.op === 'added' ? spec : baseline) : '', e.runWhen ? 'Runs when ' + C.describeCond(e.runWhen) : '', e.options ? 'Options: ' + fmtVal('options', e.options) : '', e.path ? 'Path: ' + e.path + (e.format ? ' (' + e.format + ')' : '') : ''].filter(Boolean).map((x) => `<div class="fld">${esc(x)}</div>`).join(''); }
+    const err = reviewUI.err[c.id] ? `<div class="ferr" role="alert">${esc(reviewUI.err[c.id])}</div>` : '';
+    return `<div class="chg" data-cid="${esc(c.id)}"><div class="chghead"><span class="rtag ${c.op}">${word[c.op]}</span><b>${esc(noun[c.kind] ? noun[c.kind] + ' ' : '')}${esc(title(c))}</b></div>${body}${err}
+      <div class="btns"><button type="button" class="act" data-r="accept">Accept</button><button type="button" class="act ghost" data-r="reject">${c.op === 'removed' ? 'Restore' : 'Reject'}</button></div></div>`;
+  };
+  $('sheetBody').innerHTML = `<h2>Agent changes</h2>` + (list.length
+    ? `<p class="hint">Accept keeps a change. Reject puts back your version. Undo works on rejects.</p><div class="row"><button type="button" class="act" data-r="acceptAll">Accept all</button><button type="button" class="act ghost" data-r="rejectAll">Reject all</button></div>${list.map(card).join('')}`
+    : `<p class="hint">Nothing left to review. ${spec.status === 'enhanced' ? 'Use Approve in the top bar when you are happy with the plan.' : ''}</p>`);
+}
+$('sheetBody').addEventListener('click', (e) => {
+  if (sheetMode !== 'review') return;
+  const b = e.target.closest('[data-r]'); if (!b) return;
+  const cid = b.closest('.chg') && b.closest('.chg').dataset.cid;
+  if (b.dataset.r === 'accept') acceptChange(cid); else if (b.dataset.r === 'reject') rejectChange(cid);
+  else if (b.dataset.r === 'acceptAll') acceptAll(); else if (b.dataset.r === 'rejectAll') rejectAll();
+});
+$('revOpen').onclick = openReview; $('revAccept').onclick = acceptAll; $('revReject').onclick = rejectAll;
+
+// ---- Files: where the finished skill is written, and a live view of what the agent wrote ----
+const filesUI = { state: null, timer: null, preview: null, previewStamp: 0, needFolder: false };
+function stopFilesPoll() { if (filesUI.timer) { clearInterval(filesUI.timer); filesUI.timer = null; } }
+function openFiles() {
+  selectedStep = null; sheetMode = 'files'; filesUI.preview = null; filesUI.needFolder = false; filesUI.state = null;
+  renderAll(); $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false');
+  stopFilesPoll(); refreshFiles(); filesUI.timer = setInterval(() => { if (sheetMode !== 'files') stopFilesPoll(); else refreshFiles(); }, 2000);
+}
+function renderFilesPanel() {
+  $('sheetBody').innerHTML = `<h2>Output files</h2>
+    <p class="hint">After you approve, the agent writes the finished skill into this folder. You can watch the files appear here.</p>
+    <label class="f">Folder for the finished skill<input type="text" id="outDir" value="${esc(spec.outputDir)}" placeholder="e.g. ~/.claude/skills/my-skill" aria-describedby="outHint"></label>
+    <div class="ferr" id="outNeed" role="alert"${filesUI.needFolder && !spec.outputDir ? '' : ' hidden'}>Choose a folder first, then press Approve.</div>
+    <div class="hint" id="outHint"></div><div id="fileTree"></div><div id="filePreview"></div>`;
+  paintFiles();
+}
+function paintFiles() {
+  if (sheetMode !== 'files' || !$('fileTree')) return;
+  const st = filesUI.state, hint = $('outHint');
+  if (!spec.outputDir) { hint.textContent = 'No folder chosen yet. A path starting with ~ or / works anywhere; a relative path is relative to the workspace.'; $('fileTree').innerHTML = ''; $('filePreview').innerHTML = ''; return; }
+  if (!st) { hint.textContent = 'Looking...'; return; }
+  if (st.error) { hint.textContent = ''; $('fileTree').innerHTML = `<div class="ferr" role="alert">${esc(st.error)}</div>`; return; }
+  if (st.unset) { hint.textContent = 'Saving the folder...'; return; }
+  hint.textContent = st.exists ? `Folder: ${st.root}` : `Folder: ${st.root} (does not exist yet; the agent creates it when it writes the files)`;
+  const files = st.entries || [], n = files.filter((e) => !e.dir).length;
+  $('fileTree').innerHTML = !st.exists ? '' : files.length
+    ? `<ul class="ftree" aria-label="${n} files">${files.map((e) => { const depth = e.path.replace(/\/$/, '').split('/').length - 1, name = e.path.replace(/\/$/, '').split('/').pop(); return `<li style="padding-left:${depth * 14}px">${e.dir ? `<span class="dir">${esc(name)}/</span>` : `<button type="button" data-file="${esc(e.path)}">${esc(name)}</button><span class="sz">${e.size} B</span>`}</li>`; }).join('')}</ul>${st.truncated ? '<div class="hint">Showing the first files only.</div>' : ''}`
+    : '<div class="hint">The folder is empty so far.</div>';
+}
+async function refreshFiles() {
+  try {
+    const r = await fetch('/files?t=' + Date.now(), { cache: 'no-store' }), j = await r.json();
+    filesUI.state = r.ok ? j : { error: j.error || 'Could not read that folder.' };
+  } catch (e) { filesUI.state = { error: 'Could not reach the local server.' }; }
+  paintFiles();
+  const st = filesUI.state, pv = filesUI.preview;
+  if (pv && st && st.entries) { const e = st.entries.find((x) => x.path === pv); if (!e) { filesUI.preview = null; $('filePreview').innerHTML = ''; } else if (e.mtimeMs !== filesUI.previewStamp) showFile(pv); }
+}
+async function showFile(rel) {
+  filesUI.preview = rel;
+  try {
+    const r = await fetch('/file?path=' + encodeURIComponent(rel) + '&t=' + Date.now(), { cache: 'no-store' }), j = await r.json();
+    if (sheetMode !== 'files' || filesUI.preview !== rel) return;
+    filesUI.previewStamp = j.mtimeMs || 0;
+    $('filePreview').innerHTML = `<div class="fhead">${esc(rel)}</div>` + (!r.ok ? `<div class="ferr">${esc(j.error)}</div>` : j.binary ? '<div class="hint">Binary file, no preview.</div>' : j.tooLarge ? `<div class="hint">Too large to preview (${j.size} bytes).</div>` : `<pre>${esc(j.content)}</pre>`);
+  } catch (e) { /* the next poll retries */ }
+}
+$('filesBtn').onclick = openFiles;
+$('sheetBody').addEventListener('input', (e) => {
+  if (sheetMode !== 'files' || e.target.id !== 'outDir') return;
+  const v = e.target.value; filesUI.needFolder = false; $('outNeed').hidden = true;
+  mutate((sp) => { if (v.trim()) sp.outputDir = v; else delete sp.outputDir; }, { key: 'outDir', sheet: false });
+  clearTimeout(filesUI.refreshT); filesUI.refreshT = setTimeout(refreshFiles, 900); // after the autosave
+});
+$('sheetBody').addEventListener('click', (e) => {
+  if (sheetMode !== 'files') return;
+  const b = e.target.closest('[data-file]'); if (b) showFile(b.dataset.file);
+});
+
+// ---- Chat agent handoff: for assistants that cannot reach this computer ----
+const HANDOFF_PROMPT = `You are helping design a multi-step AI skill. Below is the current design as JSON (a "skill spec"). Improve it, then reply with the COMPLETE updated JSON in a single \`\`\`json code block. A short note above the block is fine.
+
+How the spec works:
+- steps: each has id, title, summary, optional detail (markdown), dependsOn (ids of the steps it waits for), optional parallelGroup, optional runWhen, optional userNote.
+- Parallel steps share the same dependsOn and the same parallelGroup name. Add a join step that depends on all of them.
+- A dynamic input (kind "dynamic", with options) changes WHICH steps run. A step uses it through runWhen: {"input": "id", "is": "optionId"}, or "isNot", or "in": [...]. Combine conditions with {"all": [...]} or {"any": [...]}.
+- A data input (kind "data") only changes what the steps work on.
+- outputs have kind "final" or "intermediate" (an evolving plan or checklist). Their items are strings or {"text": "...", "when": <condition>}.
+
+Rules:
+- Keep every existing id. Do not change or delete x, y or userNote. Treat each userNote as an instruction to you.
+- Respect the user's titles, summaries and connections. Add detail, conditions, parallel groups, join steps and missing steps where they help.
+- No cycles in dependsOn. Output valid JSON.
+- Set "status" to "enhanced".
+
+Current design:
+\`\`\`json
+`;
+const handoffUI = { reply: '', parsed: null, err: '' };
+const handoffText = () => HANDOFF_PROMPT + JSON.stringify(spec, null, 2) + '\n```\n';
+function openHandoff() {
+  stopFilesPoll(); selectedStep = null; sheetMode = 'handoff'; handoffUI.err = '';
+  renderAll(); $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false');
+}
+function renderHandoffPanel() {
+  $('sheetBody').innerHTML = `<h2>Chat agent handoff</h2>
+    <p class="hint">For an assistant in a chat window that cannot see this computer. Copy the prompt, paste it into the chat, then paste the assistant's reply below.</p>
+    <div class="row"><button type="button" class="act" id="hoCopy">1. Copy prompt</button> <span class="hint" id="hoCopied" aria-live="polite"></span></div>
+    <details class="hodetails"><summary>Show the prompt</summary><textarea readonly rows="8" id="hoPrompt" aria-label="Prompt text"></textarea></details>
+    <label class="f">2. Paste the assistant's reply<textarea id="hoReply" rows="8" placeholder="Paste the whole reply here, including the code block"></textarea></label>
+    <div class="ferr" id="hoErr" role="alert" hidden></div>
+    <div class="row"><button type="button" class="act" id="hoCheck">Check reply</button></div><div id="hoInfo"></div>`;
+  $('hoPrompt').value = handoffText(); $('hoReply').value = handoffUI.reply; paintHandoff();
+}
+function paintHandoff() {
+  if (sheetMode !== 'handoff' || !$('hoErr')) return;
+  $('hoErr').textContent = handoffUI.err; $('hoErr').hidden = !handoffUI.err;
+  if (!handoffUI.parsed) { $('hoInfo').innerHTML = ''; return; }
+  const merged = C.mergeImported(handoffUI.parsed, spec), ch = C.diffSpecs(spec, merged);
+  const count = (kind, op) => ch.filter((c) => c.kind === kind && c.op === op).length;
+  const bits = [[count('step', 'added'), 'new step'], [count('step', 'modified'), 'changed step'], [count('step', 'removed'), 'removed step'], [ch.filter((c) => c.kind === 'input').length, 'input change'], [ch.filter((c) => c.kind === 'output').length, 'output change']]
+    .filter(([n]) => n).map(([n, w]) => `${n} ${w}${n > 1 ? 's' : ''}`);
+  $('hoInfo').innerHTML = ch.length
+    ? `<div class="hint">This reply makes ${esc(bits.join(', ') || ch.length + ' changes')}. Loading it puts them in the review list, so nothing is applied until you accept it.</div><div class="row"><button type="button" class="act" id="hoLoad">3. Load as agent changes</button></div>`
+    : '<div class="hint">The reply is valid but changes nothing.</div>';
+}
+async function loadImport() {
+  const merged = C.mergeImported(handoffUI.parsed, spec);
+  try {
+    await settle();
+    if (!(await setBaseline(copyOf(spec)))) return;                      // what you handed over, for the review to compare against
+    const { r, j } = await post('/spec', { baseHash: lastHash, spec: merged });
+    if (!r.ok) { handoffUI.err = 'Could not load it: ' + (j.error || r.status); paintHandoff(); return; }
+    spec = merged; lastHash = j.hash; lastText = JSON.stringify(merged, null, 2) + '\n'; sel = mergeSelections(spec); undoStack = []; redoStack = [];
+    handoffUI.reply = ''; handoffUI.parsed = null; openReview();
+  } catch (e) { handoffUI.err = 'Could not load it: ' + e.message; paintHandoff(); }
+}
+async function copyPrompt() {
+  const text = handoffText();
+  try { await navigator.clipboard.writeText(text); $('hoCopied').textContent = 'Copied. Paste it into your chat.'; }
+  catch (e) { const ta = $('hoPrompt'); ta.closest('details').open = true; ta.select(); $('hoCopied').textContent = 'Could not copy automatically. The prompt is selected below: copy it.'; }
+}
+$('chatBtn').onclick = openHandoff;
+$('sheetBody').addEventListener('input', (e) => { if (sheetMode === 'handoff' && e.target.id === 'hoReply') { handoffUI.reply = e.target.value; handoffUI.parsed = null; handoffUI.err = ''; paintHandoff(); } });
+$('sheetBody').addEventListener('click', (e) => {
+  if (sheetMode !== 'handoff') return;
+  if (e.target.id === 'hoCopy') copyPrompt();
+  else if (e.target.id === 'hoCheck') {
+    try { handoffUI.parsed = C.extractJson(handoffUI.reply); handoffUI.err = ''; } catch (err) { handoffUI.parsed = null; handoffUI.err = err.message; }
+    paintHandoff();
+  } else if (e.target.id === 'hoLoad') loadImport();
+});
+
+function addEdge(from, to) { // "to" now waits for "from"
+  if (from === to) { flash('A step cannot wait for itself', 3000); return; }
+  const target = (spec.steps || []).find((s) => s.id === to);
+  if (!target) return;
+  if ((target.dependsOn || []).includes(from)) { flash('Already connected', 2000); return; }
+  const trial = JSON.parse(snap()); trial.steps.find((s) => s.id === to).dependsOn = [...(target.dependsOn || []), from];
+  try { C.layers(trial); } catch (err) { flash('That would create a loop', 3500); return; }
+  mutate((sp) => { const s = sp.steps.find((x) => x.id === to); s.dependsOn = [...(s.dependsOn || []), from]; });
+}
+function removeEdge(from, to) {
+  mutate((sp) => { const s = sp.steps.find((x) => x.id === to); if (s) s.dependsOn = (s.dependsOn || []).filter((d) => d !== from); });
+}
+$('chart').addEventListener('click', (e) => {
+  const d = e.target.closest('.edel'); if (!d) return;
+  e.stopPropagation(); removeEdge(d.dataset.from, d.dataset.to);
+});
+function addStep() {
+  let newId;
+  mutate((sp) => {
+    sp.steps = sp.steps || [];
+    const used = new Set(sp.steps.map((s) => s.id)); newId = uniq('step', new Set([...used].map((x) => x))); // step, step_2, ...
+    const sinks = sp.steps.filter((s) => !sp.steps.some((t) => (t.dependsOn || []).includes(s.id)));
+    const dep = selectedStep && used.has(selectedStep) ? [selectedStep] : sinks.slice(-1).map((s) => s.id);
+    sp.steps.push({ id: newId, title: 'New step', summary: '', dependsOn: dep });
+  });
+  openSheet(newId);
+  setTimeout(() => { const f = document.querySelector('#sheetBody [data-f=title]'); if (f) { f.focus(); f.select(); } }, 50);
+}
+function deleteStep(id) {
+  mutate((sp) => { // dependents inherit the deleted step's dependencies so the flow stays connected
+    const gone = (sp.steps || []).find((s) => s.id === id); if (!gone) return;
+    const deps = gone.dependsOn || [];
+    sp.steps = sp.steps.filter((s) => s.id !== id);
+    for (const s of sp.steps) if ((s.dependsOn || []).includes(id)) s.dependsOn = [...new Set(s.dependsOn.flatMap((d) => (d === id ? deps : [d])))];
+  });
+  closeSheet();
+}
+$('addStep').onclick = addStep;
+
+function renderAll({ sheet = true } = {}) {
+  if (!spec) return;
+  $('title').textContent = spec.name || 'Skill';
+  $('desc').textContent = spec.description || '';
+  document.title = (spec.name || 'Skill') + ' - Skill Builder Visualizer';
+  changes = baseline ? C.diffSpecs(baseline, spec) : [];
+  renderBoard(); if (sheet) renderSheet(C.evaluate(spec, sel)); renderAgentBar(); renderTools(); renderSelBar(); renderRevBar();
+  if (!touched) fitView(); else applyView();
+}
+
+// ---- Canvas view: pan and zoom the whole board (cards do not move) ----
+let content = { w: 1, h: 1 }, touched = false;
+const view = { x: 0, y: 0, k: 1 }, MIN_K = 0.15, MAX_K = 2.5;
+function applyView() {
+  $('world').style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
+  $('zpct').textContent = Math.round(view.k * 100) + '%';
+}
+function fitView() {
+  const bw = $('board').clientWidth, bh = $('board').clientHeight, m = 32;
+  view.k = Math.max(MIN_K, Math.min(1.25, (bw - m * 2) / content.w, (bh - m * 2) / content.h));
+  view.x = (bw - content.w * view.k) / 2; view.y = Math.max(m / 2, (bh - content.h * view.k) / 2);
+  applyView();
+}
+function zoomAt(cx, cy, factor) {
+  const k = Math.max(MIN_K, Math.min(MAX_K, view.k * factor)), r = k / view.k;
+  view.x = cx - (cx - view.x) * r; view.y = cy - (cy - view.y) * r; view.k = k;
+  touched = true; applyView();
+}
+const boardPt = (e) => { const r = $('board').getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+const centre = () => [$('board').clientWidth / 2, $('board').clientHeight / 2];
+
+$('zin').onclick = () => zoomAt(...centre(), 1.25);
+$('zout').onclick = () => zoomAt(...centre(), 0.8);
+$('zpct').onclick = () => zoomAt(...centre(), 1 / view.k);
+$('zfit').onclick = () => { touched = false; fitView(); };
+window.addEventListener('resize', () => { if (!touched) fitView(); });
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input,textarea')) return;
+  if (e.key === '+' || e.key === '=') zoomAt(...centre(), 1.25);
+  else if (e.key === '-') zoomAt(...centre(), 0.8);
+  else if (e.key === '0') { touched = false; fitView(); }
+  else if (e.key === '1') zoomAt(...centre(), 1 / view.k);
+});
+
+// Wheel: Ctrl/Cmd+scroll (and trackpad pinch) zooms at the cursor; plain scroll pans.
+$('board').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) zoomAt(...boardPt(e), Math.exp(-e.deltaY * 0.01));
+  else { view.x -= e.deltaX; view.y -= e.deltaY; touched = true; applyView(); }
+}, { passive: false });
+
+// Pointer: drag the background to pan, drag a card to move it, two fingers to pinch.
+// A drag never counts as a click.
+const ptrs = new Map(); let dragged = false, startPt = null, pinch = null, mode = 'pan', nd = null, conn = null;
+$('board').addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button,input,textarea,select,.edel') || e.button > 0) return;
+  ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+  if (ptrs.size === 1) {
+    dragged = false; startPt = [e.clientX, e.clientY]; mode = 'pan'; nd = null; conn = null;
+    const card = EDIT && e.target.closest('.node');
+    if (card && e.target.closest('.port.out')) { mode = 'connect'; conn = { from: card.dataset.id, x: 0, y: 0 }; }
+    else if (card) { const n = lastLayout.nodes.get(card.dataset.id); mode = 'node'; nd = { id: card.dataset.id, ox: n.x, oy: n.y, before: snap() }; }
+  }
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) }; dragged = true; mode = 'pan'; nd = null; conn = null; }
+});
+$('board').addEventListener('pointermove', (e) => {
+  const prev = ptrs.get(e.pointerId); if (!prev) return;
+  if (ptrs.size === 2 && pinch) {
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), r = $('board').getBoundingClientRect();
+    if (pinch.d > 0) zoomAt((a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top, d / pinch.d);
+    pinch.d = d; return;
+  }
+  if (!dragged && Math.hypot(e.clientX - startPt[0], e.clientY - startPt[1]) < 5) return;
+  let from = prev;
+  if (!dragged) {
+    dragged = true; from = startPt; $('board').setPointerCapture(e.pointerId);
+    if (mode === 'pan') $('board').classList.add('panning'); else touched = true; // moving a card must not trigger auto-fit
+  }
+  if (mode === 'connect') {
+    const r = $('board').getBoundingClientRect();
+    conn.x = (e.clientX - r.left - view.x) / view.k; conn.y = (e.clientY - r.top - view.y) / view.k;
+    renderBoard(); return;
+  }
+  if (mode === 'node') {
+    const s = spec.steps.find((x) => x.id === nd.id);
+    s.x = Math.max(0, Math.round(nd.ox + (e.clientX - startPt[0]) / view.k));
+    s.y = Math.max(0, Math.round(nd.oy + (e.clientY - startPt[1]) / view.k));
+    renderBoard(); return;
+  }
+  view.x += e.clientX - from[0]; view.y += e.clientY - from[1]; touched = true;
+  ptrs.set(e.pointerId, [e.clientX, e.clientY]); applyView();
+});
+const endPtr = (e) => {
+  if (ptrs.size === 1 && ptrs.has(e.pointerId) && dragged && mode === 'connect' && conn) {
+    const from = conn.from, hit = document.elementFromPoint(e.clientX, e.clientY), tgt = hit && hit.closest('.node');
+    conn = null; renderBoard(); if (tgt) addEdge(from, tgt.dataset.id);
+  }
+  if (ptrs.size === 1 && ptrs.has(e.pointerId) && dragged && mode === 'node' && nd && snap() !== nd.before) commitSnapshot(nd.before);
+  ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; if (!ptrs.size) $('board').classList.remove('panning');
+};
+$('board').addEventListener('pointerup', endPtr); $('board').addEventListener('pointercancel', endPtr);
+// Swallow the click that ends a drag so moving a card does not open it.
+$('board').addEventListener('click', (e) => { if (dragged) { e.stopPropagation(); e.preventDefault(); dragged = false; } }, true);
+
+// ---- Editing: every change goes through mutate() so it is undoable and autosaved ----
+const EDIT = IS_HTTP; // read-only in a static preview
+let baseline = null, baselineHash = null, changes = []; // the plan as last handed to the agent, and the diff against it
+const multi = new Set(); // cards selected with Shift-click, for Make parallel / Add join
+let reloadNote = false, lastLayout = null, undoStack = [], redoStack = [], dirty = false, saving = false, saveTimer = null, coalesce = { key: null, t: 0 }, flashTimer = null;
+const snap = () => JSON.stringify(spec);
+function flash(msg, ms = 2500) { const f = $('flash'); f.textContent = msg; clearTimeout(flashTimer); if (ms) flashTimer = setTimeout(() => { f.textContent = ''; }, ms); }
+function renderTools() {
+  $('edittools').hidden = !EDIT; $('board').classList.toggle('editable', EDIT);
+  $('undoBtn').disabled = !undoStack.length; $('redoBtn').disabled = !redoStack.length;
+}
+function afterEdit(sheet) { sel = mergeSelections(spec); renderAll({ sheet }); scheduleSave(); }
+function pushUndo(before) { undoStack.push(before); if (undoStack.length > 100) undoStack.shift(); redoStack = []; }
+function commitSnapshot(before) { // for edits applied live (dragging): record history once, at the end
+  if (spec.status === 'approved') spec.status = 'draft'; // editing after approval reopens the design
+  pushUndo(before); coalesce = { key: null, t: 0 }; afterEdit(false);
+}
+function mutate(fn, { key = null, sheet = true } = {}) {
+  if (!EDIT || !spec) return;
+  const before = snap();
+  fn(spec);
+  if (spec.status === 'approved') spec.status = 'draft';
+  const now = Date.now();
+  if (!(key && coalesce.key === key && now - coalesce.t < 1500)) pushUndo(before); else redoStack = []; // typing in one field is one undo step
+  coalesce = { key, t: now };
+  afterEdit(sheet);
+}
+function restore(from, to) {
+  if (!from.length) return;
+  to.push(snap()); spec = JSON.parse(from.pop()); coalesce = { key: null, t: 0 };
+  afterEdit(true);
+}
+const undo = () => restore(undoStack, redoStack), redo = () => restore(redoStack, undoStack);
+$('undoBtn').onclick = undo; $('redoBtn').onclick = redo;
+$('relayoutBtn').onclick = () => mutate((sp) => { for (const s of sp.steps || []) { delete s.x; delete s.y; } });
+document.addEventListener('keydown', (e) => {
+  if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z' || e.target.closest('input,textarea,select')) return;
+  e.preventDefault(); if (e.shiftKey) redo(); else undo();
+});
+
+// Autosave: debounce, one request in flight, refuse (never merge) if the file changed under us.
+function scheduleSave() { dirty = true; flash('Unsaved changes...', 0); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 400); }
+async function flush() {
+  if (saving || !dirty) return;
+  saving = true; dirty = false;
+  const text = JSON.stringify(spec, null, 2) + '\n';
+  try {
+    const { r, j } = await post('/spec', { baseHash: lastHash, spec });
+    if (r.status === 409) {
+      dirty = false; undoStack = []; redoStack = []; lastText = ''; reloadNote = true; // poll will reload the file
+      flash('Not saved: the file changed on disk', 0);
+    } else if (!r.ok) { setBanner('Not saved: ' + (j.error || r.status) + '. Use Undo to step back.'); flash('Not saved', 0); }
+    else { lastHash = j.hash; lastText = text; setBanner(''); flash('Saved'); }
+  } catch (e) { setBanner('Could not save: ' + e.message); flash('Not saved', 0); }
+  finally { saving = false; if (dirty) flush(); }
+}
+async function settle() { // wait until nothing is pending (used before hand-off signals)
+  clearTimeout(saveTimer);
+  for (;;) { if (saving) { await new Promise((r) => setTimeout(r, 40)); continue; } if (dirty) { await flush(); continue; } return; }
+}
+
+// ---- Agent hand-off: status, "Ready for agent", live signal readout ----
+let lastHash = null;
+const STATUS_TEXT = { draft: 'draft', 'needs-review': 'waiting for agent', enhanced: 'agent updated it', approved: 'approved' };
+function note(msg) { $('sigmsg').textContent = msg; }
+function renderAgentBar() {
+  const s = (spec && spec.status) || 'draft', pending = review().length;
+  $('status').textContent = (STATUS_TEXT[s] || s) + (s === 'needs-review' && changes.length ? ` (${changes.length} change${changes.length > 1 ? 's' : ''} so far)` : ''); $('status').dataset.s = s;
+  const rb = $('readyBtn'), cb = $('changesBtn');
+  cb.hidden = s !== 'enhanced' || pending > 0; // resolve the pending changes first
+  rb.textContent = s === 'enhanced' ? (pending ? `Review changes (${pending})` : 'Approve') : s === 'needs-review' ? 'Nudge agent' : 'Ready for agent';
+  rb.disabled = cb.disabled = !IS_HTTP || !lastHash;
+  rb.title = IS_HTTP ? '' : 'Open the board from the local server to talk to an agent';
+}
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  return { r, j };
+}
+async function sendStatus(status, event) {
+  if (!IS_HTTP || !lastHash) return;
+  try {
+    await settle();
+    const { r, j } = await post('/spec', { baseHash: lastHash, spec: { ...spec, status } });
+    if (r.status === 409) { setBanner('The spec changed on disk. Reloaded it, try again.'); lastText = ''; return; }
+    if (!r.ok) throw new Error(j.error || r.status);
+    spec.status = status; lastHash = j.hash; lastText = JSON.stringify(spec, null, 2) + '\n'; renderAll({ sheet: false });
+    const s = await post('/signal', { event });
+    if (!s.r.ok) throw new Error(s.j.error || s.r.status);
+  } catch (e) { setBanner('Could not send signal: ' + e.message); }
+}
+$('readyBtn').onclick = () => {
+  const s = (spec && spec.status) || 'draft';
+  if (s === 'enhanced') {
+    if (review().length) openReview();
+    else if (!spec.outputDir) { openFiles(); filesUI.needFolder = true; renderFilesPanel(); } // the agent needs to know where to write
+    else if (C.ioIssues(spec).length) { // every step's inputs and outputs must be defined before skill files are written
+      const io = C.ioIssues(spec), first = io.find((i) => i.steps.length);
+      setBanner(`Approve is blocked: ${io.length} input/output problem${io.length > 1 ? 's' : ''} (marked \u26A0 on the cards). Press Request changes so the agent fixes them. First: ${io[0].message}`);
+      if (first) openSheet(first.steps[0]);
+    }
+    else sendStatus('approved', 'approve');
+  } else sendStatus('needs-review', 'ready');
+};
+$('changesBtn').onclick = () => sendStatus('needs-review', 'ready');
+if (IS_HTTP && window.EventSource) {
+  const es = new EventSource('/events');
+  es.onmessage = (m) => {
+    try { const e = JSON.parse(m.data); note(`Signal "${e.event}" at ${new Date(e.ts).toLocaleTimeString()}` + (e.note ? `: ${e.note}` : '')); } catch (x) { /* ignore */ }
+  };
+}
+
+async function poll() {
+  try {
+    const r = await fetch(SPEC_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    const text = await r.text();
+    if (IS_HTTP) await syncBaseline(r.headers.get('X-Baseline-Hash'));
+    if (text !== lastText && !dirty && !saving) {
+      lastText = text;
+      const next = JSON.parse(text);
+      C.layers(next); // validates dependsOn before we commit to rendering
+      lastHash = r.headers.get('X-Spec-Hash');
+      spec = next; sel = mergeSelections(spec); setBanner('');
+      undoStack = []; redoStack = []; // history belongs to the version the user was editing
+      renderAll();
+      if (reloadNote) { reloadNote = false; flash('Your last edit was not saved: an agent or another editor changed the file. Reloaded it.', 9000); }
+    }
+  } catch (err) {
+    if (IS_HTTP) setBanner('Spec problem (showing last good version): ' + err.message);
+    else if (!spec) {
+      spec = JSON.parse($('fallback-spec').textContent); sel = mergeSelections(spec); renderAll();
+      setBanner('Static preview of the example spec. For live updates open http://localhost:8765/template.html (run scripts/start.sh).');
+    }
+  }
+  setTimeout(poll, POLL_MS);
+}
+poll();
+</script>
+</body>
+</html>

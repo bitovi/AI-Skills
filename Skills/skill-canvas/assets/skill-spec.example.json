@@ -1,0 +1,302 @@
+{
+  "name": "PR Review Skill",
+  "description": "Example spec. Reviews a pull request; the depth of review depends on a few dynamic inputs.",
+  "workDir": "/tmp/pr-review/<run-id>/",
+  "inputs": [
+    {
+      "id": "pr_url",
+      "label": "PR URL",
+      "kind": "data",
+      "options": []
+    },
+    {
+      "id": "depth",
+      "label": "Review depth",
+      "kind": "dynamic",
+      "options": [
+        {
+          "id": "quick",
+          "label": "Quick"
+        },
+        {
+          "id": "full",
+          "label": "Full"
+        }
+      ],
+      "default": "quick"
+    },
+    {
+      "id": "has_tests",
+      "label": "PR touches tests?",
+      "kind": "dynamic",
+      "options": [
+        {
+          "id": "yes",
+          "label": "Yes"
+        },
+        {
+          "id": "no",
+          "label": "No"
+        }
+      ],
+      "default": "yes"
+    },
+    {
+      "id": "security",
+      "label": "Security scan",
+      "kind": "dynamic",
+      "options": [
+        {
+          "id": "on",
+          "label": "On"
+        },
+        {
+          "id": "off",
+          "label": "Off"
+        }
+      ],
+      "default": "off"
+    }
+  ],
+  "steps": [
+    {
+      "id": "fetch",
+      "title": "Fetch PR diff",
+      "summary": "Pull the diff and metadata for the PR.",
+      "detail": "Uses the PR URL to download:\n\n- the unified diff\n- title, description, labels\n- list of changed files",
+      "reads": [
+        "pr_url"
+      ],
+      "produces": [
+        "diff"
+      ]
+    },
+    {
+      "id": "classify",
+      "title": "Classify changes",
+      "summary": "Tag each changed file (code, tests, config, docs).",
+      "detail": "The classification **decides which reviewers are worth spawning** in the next stage.",
+      "dependsOn": [
+        "fetch"
+      ],
+      "reads": [
+        "diff"
+      ],
+      "produces": [
+        "classes"
+      ]
+    },
+    {
+      "id": "style",
+      "title": "Style review",
+      "summary": "Naming, formatting, obvious smells.",
+      "detail": "Always runs. Cheap and fast.",
+      "dependsOn": [
+        "classify"
+      ],
+      "parallelGroup": "review",
+      "reads": [
+        "diff",
+        "classes"
+      ],
+      "produces": [
+        "style_findings"
+      ]
+    },
+    {
+      "id": "logic",
+      "title": "Deep logic review",
+      "summary": "Trace behavior, edge cases, error paths.",
+      "detail": "Only worth the cost on a **full** review.",
+      "dependsOn": [
+        "classify"
+      ],
+      "parallelGroup": "review",
+      "runWhen": {
+        "input": "depth",
+        "is": "full"
+      },
+      "reads": [
+        "diff",
+        "classes"
+      ],
+      "produces": [
+        "logic_findings"
+      ]
+    },
+    {
+      "id": "tests",
+      "title": "Test coverage review",
+      "summary": "Are the new behaviors actually tested?",
+      "detail": "Skipped when the PR does not touch tests.",
+      "dependsOn": [
+        "classify"
+      ],
+      "parallelGroup": "review",
+      "runWhen": {
+        "input": "has_tests",
+        "is": "yes"
+      },
+      "reads": [
+        "diff",
+        "classes"
+      ],
+      "produces": [
+        "test_findings"
+      ]
+    },
+    {
+      "id": "sec",
+      "title": "Security scan",
+      "summary": "Secrets, injection, unsafe deps.",
+      "detail": "Opt-in. Adds a findings section to the report.",
+      "dependsOn": [
+        "classify"
+      ],
+      "parallelGroup": "review",
+      "runWhen": {
+        "input": "security",
+        "is": "on"
+      },
+      "reads": [
+        "diff",
+        "classes"
+      ],
+      "produces": [
+        "sec_findings"
+      ]
+    },
+    {
+      "id": "merge",
+      "title": "Merge findings",
+      "summary": "Join all reviewer outputs, dedupe, rank by severity.",
+      "detail": "Join step. Runs as long as **at least one** reviewer ran.",
+      "dependsOn": [
+        "style",
+        "logic",
+        "tests",
+        "sec"
+      ],
+      "reads": [
+        "style_findings",
+        "logic_findings",
+        "test_findings",
+        "sec_findings"
+      ],
+      "produces": [
+        "ranked_findings"
+      ]
+    },
+    {
+      "id": "report",
+      "title": "Write report",
+      "summary": "Produce the final review comment.",
+      "detail": "Formats merged findings into one review.",
+      "dependsOn": [
+        "merge"
+      ],
+      "produces": [
+        "report"
+      ],
+      "reads": [
+        "ranked_findings"
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "diff",
+      "label": "PR diff and metadata",
+      "path": "diff.md",
+      "format": "markdown"
+    },
+    {
+      "id": "classes",
+      "label": "Changed files by type",
+      "path": "classes.json",
+      "format": "json"
+    },
+    {
+      "id": "style_findings",
+      "label": "Style findings",
+      "path": "findings/style.md",
+      "format": "markdown"
+    },
+    {
+      "id": "logic_findings",
+      "label": "Logic findings",
+      "path": "findings/logic.md",
+      "format": "markdown"
+    },
+    {
+      "id": "test_findings",
+      "label": "Test coverage findings",
+      "path": "findings/tests.md",
+      "format": "markdown"
+    },
+    {
+      "id": "sec_findings",
+      "label": "Security findings",
+      "path": "findings/security.md",
+      "format": "markdown"
+    },
+    {
+      "id": "ranked_findings",
+      "label": "Merged, ranked findings",
+      "path": "findings/ranked.md",
+      "format": "markdown"
+    },
+    {
+      "id": "report",
+      "label": "Review comment",
+      "path": "report.md",
+      "format": "markdown"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "plan",
+      "label": "Review plan (evolves)",
+      "kind": "intermediate",
+      "summary": "The checklist the skill builds after classification. Its contents depend on the inputs.",
+      "items": [
+        {
+          "text": "Check naming and formatting"
+        },
+        {
+          "text": "Trace edge cases and error paths",
+          "when": {
+            "input": "depth",
+            "is": "full"
+          }
+        },
+        {
+          "text": "Verify new behavior has tests",
+          "when": {
+            "input": "has_tests",
+            "is": "yes"
+          }
+        },
+        {
+          "text": "Scan for secrets and injection",
+          "when": {
+            "input": "security",
+            "is": "on"
+          }
+        }
+      ],
+      "shapedBy": [
+        "depth",
+        "has_tests",
+        "security"
+      ]
+    },
+    {
+      "id": "report_out",
+      "label": "Review report",
+      "kind": "final",
+      "summary": "One ranked review comment posted to the PR.",
+      "artifact": "report"
+    }
+  ]
+}

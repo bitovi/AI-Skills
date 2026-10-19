@@ -23,5 +23,7 @@ Want to share a skill you've built? Add it as a markdown file under `Skills/`:
 
 ## Skills
 
+- [multi-step-skill-designer](Skills/multi-step-skill-designer): Design a multi-step skill with Claude on a live canvas, then generate one skill per step plus a thin entry skill. Needs [skill-canvas](Skills/skill-canvas) copied alongside it.
 - [roast](Skills/roast) — A brutally honest, no-nonsense code review that pushes back hard on bad patterns, security issues, and design smells.
+- [skill-canvas](Skills/skill-canvas): A live canvas that shows a multi-step skill's steps, parallel branches, conditions, inputs and outputs. Needs Node.js 16+.
 - [write-jira-story](Skills/write-jira-story) — Generate well-structured Jira stories.
