@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overview Animation</title>
+<style>
+@font-face { font-family: "Inter"; font-weight: 100 900; src: url(fonts/inter-latin.woff2) format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 100 800; src: url(fonts/jetbrains-mono-latin.woff2) format("woff2"); }
+html, body { margin: 0; background: #0d1117; color: #e6edf3; font-family: Inter, sans-serif; }
+canvas { display: block; width: 1280px; height: 720px; }
+#ui { padding: 10px 16px; display: flex; gap: 12px; align-items: center; }
+#ui input[type=range] { flex: 1; }
+body.render #ui { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<div id="ui">
+  <button id="play" type="button">Play</button>
+  <input id="scrub" type="range" min="0" max="120" step="0.0333" value="0" aria-label="Time">
+  <span id="time">0.00</span>
+  <audio id="music" src="build/music.wav" preload="auto"></audio>
+</div>
+<script>
+// video.json is the single source for duration, tempo, and fps.
+fetch('video.json').then(function (r) { return r.json(); }).then(function (v) {
+  window.VIDEO = v;
+  var s = document.createElement('script'); s.src = 'anim.js'; s.onload = boot; document.body.appendChild(s);
+});
+function boot() {
+  document.getElementById('scrub').max = DUR;
+  if (/render=1/.test(location.search)) document.body.classList.add('render');
+  var scrub = document.getElementById('scrub'), timeEl = document.getElementById('time');
+  var play = document.getElementById('play'), music = document.getElementById('music');
+  var playing = false, t0 = 0, start = 0;
+  function show(t) { seek(t); scrub.value = t; timeEl.textContent = t.toFixed(2); }
+  scrub.addEventListener('input', function () { show(+scrub.value); if (playing) { music.currentTime = +scrub.value; } });
+  play.addEventListener('click', function () {
+    playing = !playing; play.textContent = playing ? 'Pause' : 'Play';
+    if (playing) { t0 = +scrub.value; start = performance.now(); music.currentTime = t0; music.play().catch(function () {}); requestAnimationFrame(loop); }
+    else music.pause();
+  });
+  function loop(now) {
+    if (!playing) return;
+    var t = t0 + (now - start) / 1000;
+    if (t > DUR) { playing = false; play.textContent = 'Play'; return; }
+    show(t); requestAnimationFrame(loop);
+  }
+  document.fonts.ready.then(function () {
+    return Promise.all(['500 20px Inter', '600 20px Inter', '700 20px Inter', '800 20px Inter', '700 20px "JetBrains Mono"'].map(function (f) { return document.fonts.load(f); }));
+  }).then(function () {
+    var m = location.search.match(/t=([\d.]+)/);
+    show(m ? +m[1] : 0);
+    window.READY = true;
+  });
+}
+</script>
+</body>
+</html>

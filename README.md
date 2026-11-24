@@ -23,5 +23,6 @@ Want to share a skill you've built? Add it as a markdown file under `Skills/`:
 
 ## Skills
 
+- [overview-video](Skills/overview-video): Make a snappy animated overview video with original music in any style and length, embed it on a page, and write a Slack post to share it.
 - [roast](Skills/roast) — A brutally honest, no-nonsense code review that pushes back hard on bad patterns, security issues, and design smells.
 - [write-jira-story](Skills/write-jira-story) — Generate well-structured Jira stories.
