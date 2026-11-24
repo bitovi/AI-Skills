@@ -345,9 +345,9 @@ function sIdea(t) {
 function sEnd(t) {
   var a1 = fin(t, T.end + 0.3, 0.5), a2 = fin(t, T.end + 0.8, 0.5);
   glow(640, 220, 260, C.gold, 0.12 + 0.2 * beatPulse(t));
-  text('Your call to action', 640, 320 + (1 - a1) * 24, { size: 60, w: 800, a: a1 });
+  text('Grab the skill', 640, 320 + (1 - a1) * 24, { size: 60, w: 800, a: a1 });
   ctx.save(); ctx.globalAlpha = a2;
-  var url = 'example.com/start-here', w = tw(url, 28, 700, 'JetBrains Mono') + 60;
+  var url = 'github.com/bitovi/ai-skills', w = tw(url, 28, 700, 'JetBrains Mono') + 60;
   rr(640 - w / 2, 380, w, 60, 30); ctx.fillStyle = hexA(C.red, 0.25); ctx.fill(); ctx.strokeStyle = C.redL; ctx.lineWidth = 2.5; ctx.stroke();
   text(url, 640, 411, { size: 28, w: 700, f: 'JetBrains Mono' });
   ctx.restore();
